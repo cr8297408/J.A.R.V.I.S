@@ -10,6 +10,17 @@
           }
         ]
       }
+    ],
+    "Notification": [
+      {
+        "hooks": [
+          {
+            "name": "jarvis-notification",
+            "type": "command",
+            "command": "python3 hooks/notification.py"
+          }
+        ]
+      }
     ]
   }
 }

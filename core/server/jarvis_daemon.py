@@ -21,9 +21,10 @@ project_root = os.path.dirname(
 sys.path.insert(0, project_root)
 
 from core.lexer.poc_lexer import StreamingLexer
-from core.audio.vad_listener import start_vad_thread
+from core.audio.vad_listener import start_vad_thread, awaiting_tool_permission
 from adapters.llm.gemini_summarizer import GeminiSummarizer
 from adapters.tts.mac_say_tts import MacSayTTS
+from adapters.stt.ghost_typer import GhostTyper
 
 # Evento global de Barge-in (Si se pone en True, el TTS se calla)
 interrupt_event = threading.Event()
@@ -48,6 +49,27 @@ async def process_text_queue():
     while True:
         try:
             chunk = await text_queue.get()
+
+            if chunk.startswith("__NOTIFICATION__"):
+                payload_str = chunk[16:]
+                import json
+
+                try:
+                    payload = json.loads(payload_str)
+                    if payload.get("notification_type") == "ToolPermission":
+                        msg = payload.get(
+                            "message", "Tool permission required."
+                        )
+                        prompt = f"{msg}. Say 1 to allow once, 2 to allow for this session, or 3 to deny."
+                        logging.info(
+                            "Notificación de herramienta detectada. Avisando al usuario."
+                        )
+                        tts.speak(prompt, interrupt_event)
+                        awaiting_tool_permission.set()
+                except Exception as e:
+                    logging.error(f"Error parseando notificación: {e}")
+                text_queue.task_done()
+                continue
 
             # Si el usuario interrumpió hace poco (habló), limpiamos el estado del lexer
             # para no decir la mitad de una frase vieja o quedarnos atrapados en un bloque de código
@@ -134,11 +156,15 @@ async def start_server():
 def main():
     print("\r\n[J.A.R.V.I.S] Inicializando el Demonio Maestro...\r\n")
 
-    # 1. Arrancamos el Micrófono (VAD) en un hilo demonio para el Barge-in
+    # 1. Abrimos una terminal dedicada con gemini-cli
+    logging.info("Aislando entorno: Lanzando Terminal nueva con Gemini...")
+    GhostTyper.launch_gemini_terminal()
+
+    # 2. Arrancamos el Micrófono (VAD) en un hilo demonio para el Barge-in
     logging.info("Iniciando motor VAD (Voice Activity Detection)...")
     start_vad_thread(interrupt_event)
 
-    # 2. Arrancamos el servidor TCP Asíncrono en el hilo principal
+    # 3. Arrancamos el servidor TCP Asíncrono en el hilo principal
     try:
         asyncio.run(start_server())
     except KeyboardInterrupt:

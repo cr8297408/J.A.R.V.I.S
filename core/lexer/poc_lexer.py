@@ -28,11 +28,15 @@ class StreamingLexer:
         """
         self.buffer += token
 
-        # Caso 0: Estamos adentro de un bloque de pensamiento (<thought>)
+        # Caso 0: Estamos adentro de un bloque de pensamiento (<thought> o <think>)
         if self.in_thought_block:
             if "</thought>" in self.buffer:
-                # Terminó el bloque de pensamiento, lo tiramos a la basura
                 parts = self.buffer.split("</thought>", 1)
+                self.in_thought_block = False
+                self.buffer = parts[1] if len(parts) > 1 else ""
+                return None, None
+            elif "</think>" in self.buffer:
+                parts = self.buffer.split("</think>", 1)
                 self.in_thought_block = False
                 self.buffer = parts[1] if len(parts) > 1 else ""
                 return None, None
@@ -48,7 +52,17 @@ class StreamingLexer:
             self.in_thought_block = True
             self.buffer = parts[1] if len(parts) > 1 else ""
 
-            # Si había texto útil antes de que empiece a pensar, lo mandamos a hablar
+            if text_before_thought:
+                return "TEXT_CHUNK", text_before_thought
+            return None, None
+
+        if "<think>" in self.buffer:
+            parts = self.buffer.split("<think>", 1)
+            text_before_thought = parts[0].strip()
+
+            self.in_thought_block = True
+            self.buffer = parts[1] if len(parts) > 1 else ""
+
             if text_before_thought:
                 return "TEXT_CHUNK", text_before_thought
             return None, None

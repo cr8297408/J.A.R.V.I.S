@@ -9,6 +9,8 @@ from openwakeword.model import Model
 from adapters.stt.mlx_stt import LocalSTT
 from adapters.stt.ghost_typer import GhostTyper
 
+awaiting_tool_permission = threading.Event()
+
 
 def play_sfx(sound_name):
     """Reproduce sonidos nativos de Mac para feedback no bloqueante."""
@@ -76,6 +78,16 @@ def start_vad_thread(interrupt_event: threading.Event):
                 raw_audio = stream.read(CHUNK, exception_on_overflow=False)
 
                 if state == "WAITING_WAKEWORD":
+                    if awaiting_tool_permission.is_set():
+                        logging.info("Auto-triggering recording for tool permission...")
+                        play_sfx("wake")
+                        owwModel.reset()
+                        state = "RECORDING_COMMAND"
+                        recording_frames = []
+                        silence_chunks = 0
+                        frames_buffer = []
+                        continue
+
                     frames_buffer.append(raw_audio)
                     # OWW espera chunks de ~1280 (nosotros acumulamos 3 * 480 = 1440)
                     if len(frames_buffer) >= 3:
@@ -135,16 +147,67 @@ def start_vad_thread(interrupt_event: threading.Event):
                             wf.setframerate(RATE)
                             wf.writeframes(b"".join(recording_frames))
 
+                        # Capturar si era una respuesta a un tool permission antes de limpiar
+                        was_tool_permission = awaiting_tool_permission.is_set()
+                        if was_tool_permission:
+                            awaiting_tool_permission.clear()
+
                         # Transcribir en un hilo separado para no bloquear la lectura del mic
-                        def transcribe_and_type():
+                        def transcribe_and_type(is_tool: bool):
                             text = stt_engine.transcribe(temp_wav)
                             if text:
                                 logging.info(f"Comando transcrito: {text}")
-                                GhostTyper.type_string(text)
+                                if is_tool:
+                                    t_lower = text.lower()
+                                    if any(
+                                        w in t_lower
+                                        for w in [
+                                            "once",
+                                            "una vez",
+                                            "1",
+                                            "one",
+                                            "uno",
+                                            "yes",
+                                            "sí",
+                                            "si",
+                                        ]
+                                    ):
+                                        GhostTyper.type_string("1")
+                                    elif any(
+                                        w in t_lower
+                                        for w in [
+                                            "session",
+                                            "sesión",
+                                            "2",
+                                            "two",
+                                            "dos",
+                                            "siempre",
+                                            "always",
+                                        ]
+                                    ):
+                                        GhostTyper.type_string("2")
+                                    elif any(
+                                        w in t_lower
+                                        for w in [
+                                            "deny",
+                                            "denegar",
+                                            "no",
+                                            "3",
+                                            "three",
+                                            "tres",
+                                        ]
+                                    ):
+                                        GhostTyper.type_string("3")
+                                    else:
+                                        GhostTyper.type_string(text)
+                                else:
+                                    GhostTyper.type_string(text)
                             else:
                                 play_sfx("error")
 
-                        threading.Thread(target=transcribe_and_type).start()
+                        threading.Thread(
+                            target=transcribe_and_type, args=(was_tool_permission,)
+                        ).start()
 
                         # Volver a Standby
                         state = "WAITING_WAKEWORD"

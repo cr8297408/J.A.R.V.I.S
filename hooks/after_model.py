@@ -31,8 +31,19 @@ def main():
         candidates = response_obj.get("candidates", [])
         if candidates:
             parts = candidates[0].get("content", {}).get("parts", [])
-            if parts and isinstance(parts[0], str):
-                chunk = parts[0]
+            if parts:
+                # Loggear las parts para ver cómo vienen estructuradas
+                with open("/tmp/jarvis_payload_debug.log", "a") as f:
+                    f.write(json.dumps(parts) + "\n")
+
+                # TODO: Adaptar según si es dict o string
+                if isinstance(parts[0], str):
+                    chunk = parts[0]
+                elif isinstance(parts[0], dict) and "text" in parts[0]:
+                    # Some versions might send dicts
+                    chunk = parts[0].get("text", "")
+                else:
+                    chunk = str(parts[0])
 
                 # 3. Mandar el chunk al demonio Jarvis por socket TCP de forma bloqueante rápida
                 try:

@@ -1,6 +1,7 @@
 import subprocess
 import logging
 import time
+import os
 
 
 class GhostTyper:
@@ -8,6 +9,45 @@ class GhostTyper:
     Inyecta texto y comandos de teclado apuntando directamente a la Terminal.
     Se utiliza osascript (AppleScript) para emular el tipeo.
     """
+
+    @staticmethod
+    def launch_gemini_terminal(target_app: str = "Terminal"):
+        """
+        Abre una nueva ventana de la Terminal ejecutando el comando gemini.
+        Se asegura de abrir en la misma ruta donde se inició el Daemon.
+        """
+        logging.info(f"Abriendo una nueva ventana de {target_app} con gemini cli...")
+
+        # Obtener la ruta actual donde se está ejecutando el daemon
+        cwd = os.getcwd()
+
+        # Usar AppleScript para abrir una sola ventana en la ruta correcta.
+        script = f'''
+        tell application "{target_app}"
+            if not (exists window 1) then reopen
+            activate
+            delay 0.5
+            
+            -- Si la ventana activa está libre (ej. recién iniciada la app), la usamos.
+            -- Si está ocupada (ej. corriendo el daemon o cualquier otra cosa), abrimos otra.
+            if not busy of window 1 then
+                do script "cd '{cwd}' && clear && gemini" in window 1
+            else
+                do script "cd '{cwd}' && clear && gemini"
+            end if
+        end tell
+        '''
+        try:
+            subprocess.run(
+                ["osascript", "-e", script], check=True, capture_output=True, text=True
+            )
+            logging.info("Terminal con Gemini abierta en el directorio correcto.")
+            # Esperamos un momento a que inicialice Gemini antes de que el usuario hable
+            time.sleep(2)
+        except subprocess.CalledProcessError as e:
+            logging.error(
+                f"Error abriendo la Terminal con AppleScript: {e.stderr.strip()}"
+            )
 
     @staticmethod
     def type_string(text: str, target_app: str = "Terminal"):
@@ -21,23 +61,37 @@ class GhostTyper:
 
         logging.info(f"GhostTyper inyectando en {target_app}: '{text}'")
 
+        # Enviar comando para abrir gemini si se nos pide
+        # O detectar si queremos abrir una ventana dedicada, pero por ahora abrimos la terminal
+        # y si no hay ventana, el script de arriba crea una.
+
         # 1. Guardar el texto en el portapapeles de Mac (es mucho más confiable que simular teclas de a una)
         # Escapamos comillas simples para bash
         safe_text = text.replace("'", "'\"'\"'")
-        # Nota: Usamos rstrip para asegurarnos de que no haya saltos de línea basura,
-        # y usamos -n en echo para que pbcopy no agregue un newline extra.
+        # Nota: quitamos el \n del final en el portapapeles para evitar que herramientas como prompt-toolkit
+        # abran un bloque multilínea que ignora el Enter normal.
         subprocess.run(f"echo -n '{safe_text}' | pbcopy", shell=True)
 
         # 2. AppleScript: Activar app -> Pegar (Cmd+V) -> Enter
         script = f'''
-        tell application "{target_app}" to activate
-        delay 0.2
+        tell application "{target_app}"
+            if not (exists window 1) then
+                reopen
+            end if
+            activate
+            delay 0.3
+        end tell
+        
         tell application "System Events"
             -- Simular Command + V (Pegar)
             keystroke "v" using command down
-            delay 0.1
-            -- Simular Enter
-            key code 36
+            -- Darle tiempo a la terminal para procesar el texto (evita que el enter llegue antes que la UI actualice)
+            delay 0.5
+            -- Usar explícitamente "keystroke return" en lugar de "key code 36" para mayor compatibilidad
+            keystroke return
+            -- En caso de bracketed paste mode, un segundo return puede ser necesario
+            delay 0.5
+            keystroke return
         end tell
         '''
 
