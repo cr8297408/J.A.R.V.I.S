@@ -12,12 +12,14 @@ class StreamingLexer:
     def __init__(self):
         self.buffer = ""
         self.in_code_block = False
+        self.in_thought_block = False
         self.delimiters = [".", "?", "!", "\n"]
 
     def reset(self):
         """Limpia el estado del lexer, útil para cuando hay un barge-in (interrupción del usuario)."""
         self.buffer = ""
         self.in_code_block = False
+        self.in_thought_block = False
 
     async def process_token(self, token: str):
         """
@@ -25,6 +27,31 @@ class StreamingLexer:
         (TIPO_DE_CHUNK, CONTENIDO) o (None, None) si todavía está acumulando.
         """
         self.buffer += token
+
+        # Caso 0: Estamos adentro de un bloque de pensamiento (<thought>)
+        if self.in_thought_block:
+            if "</thought>" in self.buffer:
+                # Terminó el bloque de pensamiento, lo tiramos a la basura
+                parts = self.buffer.split("</thought>", 1)
+                self.in_thought_block = False
+                self.buffer = parts[1] if len(parts) > 1 else ""
+                return None, None
+            else:
+                # Seguimos adentro del pensamiento, acumulamos en silencio y no devolvemos nada
+                return None, None
+
+        # Si encontramos el INICIO de un bloque de pensamiento
+        if "<thought>" in self.buffer:
+            parts = self.buffer.split("<thought>", 1)
+            text_before_thought = parts[0].strip()
+
+            self.in_thought_block = True
+            self.buffer = parts[1] if len(parts) > 1 else ""
+
+            # Si había texto útil antes de que empiece a pensar, lo mandamos a hablar
+            if text_before_thought:
+                return "TEXT_CHUNK", text_before_thought
+            return None, None
 
         # Caso 1: Estamos adentro de un bloque de código acumulando silencio
         if self.in_code_block:

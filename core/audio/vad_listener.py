@@ -1,50 +1,161 @@
 import pyaudio
-import webrtcvad
+import numpy as np
 import threading
+import logging
+import wave
+import subprocess
+import webrtcvad
+from openwakeword.model import Model
+from adapters.stt.mlx_stt import LocalSTT
+from adapters.stt.ghost_typer import GhostTyper
+
+
+def play_sfx(sound_name):
+    """Reproduce sonidos nativos de Mac para feedback no bloqueante."""
+    sounds = {
+        "wake": "/System/Library/Sounds/Ping.aiff",
+        "stop": "/System/Library/Sounds/Pop.aiff",
+        "error": "/System/Library/Sounds/Basso.aiff",
+    }
+    path = sounds.get(sound_name)
+    if path:
+        subprocess.Popen(["afplay", path])
 
 
 def start_vad_thread(interrupt_event: threading.Event):
     """
-    Inicia un hilo demonio que monitorea el micrófono constantemente.
-    Si detecta voz continua, dispara el evento de interrupción (Barge-in).
+    Máquina de estados de Escucha Activa:
+    1. Espera 'Hey Jarvis' (Wake Word).
+    2. Graba el comando del usuario hasta detectar silencio (VAD).
+    3. Transcribe usando MLX Whisper.
+    4. Inyecta el texto en la terminal.
     """
 
     def listener():
-        vad = webrtcvad.Vad(3)
-        audio = pyaudio.PyAudio()
+        logging.info("Inicializando Pipeline de Escucha Activa...")
 
+        # 1. Cargar Modelos
+        try:
+            # Los modelos ahora están descargados correctamente dentro del paquete de openwakeword
+            owwModel = Model(wakeword_models=["hey_jarvis"], inference_framework="onnx")
+            stt_engine = LocalSTT()
+            vad = webrtcvad.Vad(2)  # Agresividad media (0-3) para detectar silencio
+        except Exception as e:
+            logging.error(f"Fallo cargando modelos: {e}")
+            return
+
+        audio = pyaudio.PyAudio()
+        FORMAT = pyaudio.paInt16
+        CHANNELS = 1
+        RATE = 16000
+
+        # OWW necesita 1280 (80ms), WebRTCVAD necesita frames exactos de 10, 20 o 30ms.
+        # 480 frames a 16kHz = 30ms. Usaremos 480 como base común y acumularemos para OWW.
+        CHUNK = 480
+
+        stream = None
         try:
             stream = audio.open(
-                format=pyaudio.paInt16,
-                channels=1,
-                rate=16000,
+                format=FORMAT,
+                channels=CHANNELS,
+                rate=RATE,
                 input=True,
-                frames_per_buffer=480,
-            )  # 30ms a 16kHz
+                frames_per_buffer=CHUNK,
+            )
 
-            consecutive_voice_frames = 0
+            logging.info("Jarvis en Standby. Esperando 'Hey Jarvis'...")
+
+            # Variables de Estado
+            state = "WAITING_WAKEWORD"
+            frames_buffer = []  # Para acumular hasta los 1280 que necesita OWW
+            recording_frames = []  # Para guardar el comando entero
+            silence_chunks = 0
+            MAX_SILENCE_CHUNKS = 50  # ~1.5 segundos de silencio a 30ms por chunk
 
             while True:
-                frame = stream.read(480, exception_on_overflow=False)
-                is_speech = vad.is_speech(frame, 16000)
+                raw_audio = stream.read(CHUNK, exception_on_overflow=False)
 
-                if is_speech:
-                    consecutive_voice_frames += 1
-                else:
-                    consecutive_voice_frames = 0
+                if state == "WAITING_WAKEWORD":
+                    frames_buffer.append(raw_audio)
+                    # OWW espera chunks de ~1280 (nosotros acumulamos 3 * 480 = 1440)
+                    if len(frames_buffer) >= 3:
+                        combined_audio = b"".join(frames_buffer)
+                        audio_data = np.frombuffer(combined_audio, dtype=np.int16)
 
-                # Si hay voz sostenida (aprox 150ms)
-                if consecutive_voice_frames >= 5:
-                    # Solo disparamos si no estaba ya disparado
-                    if not interrupt_event.is_set():
-                        interrupt_event.set()
-                    consecutive_voice_frames = 0  # Reseteamos para la próxima
+                        prediction = owwModel.predict(audio_data)
+
+                        for mdl in list(owwModel.prediction_buffer.keys()):
+                            score = (
+                                prediction[mdl] if isinstance(prediction, dict) else 0.0
+                            )
+
+                            # Ajuste de Sensibilidad: Bajamos el threshold de 0.5 a 0.35
+                            # para que reconozca el acento en español y variaciones más fácil
+                            if score > 0.35:
+                                logging.info(
+                                    f"¡Wake Word detectada! (Score: {score:.2f})"
+                                )
+                                # 1. Callar si estaba hablando
+                                if not interrupt_event.is_set():
+                                    interrupt_event.set()
+
+                                # 2. Feedback sonoro
+                                play_sfx("wake")
+
+                                # 3. Cambiar de estado
+                                owwModel.reset()
+                                state = "RECORDING_COMMAND"
+                                recording_frames = []
+                                silence_chunks = 0
+                                break  # Salir del for loop
+
+                        frames_buffer = []  # Limpiar buffer corto
+
+                elif state == "RECORDING_COMMAND":
+                    recording_frames.append(raw_audio)
+
+                    # Chequear silencio con WebRTCVAD
+                    is_speech = vad.is_speech(raw_audio, RATE)
+                    if not is_speech:
+                        silence_chunks += 1
+                    else:
+                        silence_chunks = 0  # Resetear si detecta voz
+
+                    # Si detectó ~1.5s de silencio, termina de grabar
+                    if silence_chunks > MAX_SILENCE_CHUNKS:
+                        logging.info("Silencio detectado. Procesando comando...")
+                        play_sfx("stop")
+                        state = "PROCESSING"
+
+                        # Guardar a WAV temporal
+                        temp_wav = "temp_command.wav"
+                        with wave.open(temp_wav, "wb") as wf:
+                            wf.setnchannels(CHANNELS)
+                            wf.setsampwidth(audio.get_sample_size(FORMAT))
+                            wf.setframerate(RATE)
+                            wf.writeframes(b"".join(recording_frames))
+
+                        # Transcribir en un hilo separado para no bloquear la lectura del mic
+                        def transcribe_and_type():
+                            text = stt_engine.transcribe(temp_wav)
+                            if text:
+                                logging.info(f"Comando transcrito: {text}")
+                                GhostTyper.type_string(text)
+                            else:
+                                play_sfx("error")
+
+                        threading.Thread(target=transcribe_and_type).start()
+
+                        # Volver a Standby
+                        state = "WAITING_WAKEWORD"
+                        frames_buffer = []
 
         except Exception as e:
-            print(f"\n[VAD ERROR] {e}")
+            logging.error(f"[VAD LISTENER ERROR] {e}")
         finally:
-            stream.stop_stream()
-            stream.close()
+            if stream is not None:
+                stream.stop_stream()
+                stream.close()
             audio.terminate()
 
     t = threading.Thread(target=listener, daemon=True)
