@@ -95,3 +95,13 @@ Descubrimos (leyendo la documentación oficial) que la Gemini CLI soporta **Hook
 1. **Deprecar el Wrapper:** Eliminar la lógica de `pty_wrapper.py` y el orquestador viejo.
 2. **Definir el Contrato (JSON Schema):** **URGENTE**. Necesitamos el esquema JSON exacto que el hook `AfterModel` recibe por `stdin` y el formato exacto que debe devolver por `stdout`. Sin esto, estamos ciegos.
 3. **Nuevo Entrypoint:** Crear un script (`hook_after_model.py`) que respete este contrato de I/O, procese el texto limpio a través de nuestro pipeline existente (Lexer -> Flash Summarizer -> TTS) y devuelva el control a la CLI gracefully.
+
+## Fase 7: Arquitectura Cliente-Servidor (Jarvis Daemon)
+
+### El Problema de la Latencia y el Estado en Hooks
+El hook `AfterModel` se dispara *por cada chunk* (token) que la IA genera durante el streaming. Si levantáramos el intérprete de Python, cargáramos los modelos y el motor de audio en cada invocación, la latencia sería de segundos por palabra, destruyendo la experiencia de tiempo real. Además, nuestro `StreamingLexer` necesita mantener estado (saber si un bloque de código se abrió en un chunk anterior). Un script efímero no tiene estado.
+
+### La Solución: Desacoplamiento IPC (Inter-Process Communication)
+Dividimos el sistema en dos componentes comunicados por sockets TCP (localhost):
+1. **Jarvis Daemon (Servidor):** Un proceso persistente que corre de fondo. Mantiene el estado del Lexer, el hilo del VAD (barge-in), las conexiones a la API y el motor TTS calientes. Escucha de forma asíncrona.
+2. **Hook Client (El script):** Un script minúsculo (`hooks/after_model.py`) invocado por la CLI. Lee el JSON por `stdin`, se lo tira por socket al Daemon, recibe un ACK instantáneo y escupe por `stdout` el JSON requerido (`{"decision": "allow"}`) para que la CLI siga dibujando la UI sin trabarse.

@@ -14,6 +14,11 @@ class StreamingLexer:
         self.in_code_block = False
         self.delimiters = [".", "?", "!", "\n"]
 
+    def reset(self):
+        """Limpia el estado del lexer, útil para cuando hay un barge-in (interrupción del usuario)."""
+        self.buffer = ""
+        self.in_code_block = False
+
     async def process_token(self, token: str):
         """
         Recibe un token (pedacito de string) y devuelve una tupla:

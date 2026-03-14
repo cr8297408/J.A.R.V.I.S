@@ -1,0 +1,14 @@
+{
+  "session_id": "test-123",
+  "hook_event_name": "AfterModel",
+  "llm_response": {
+    "candidates": [
+      {
+        "content": {
+          "role": "model",
+          "parts": ["Hola Tony. El sistema de hooks está funcionando perfecto. Ya no necesitamos lidiar con la basura de la terminal."]
+        }
+      }
+    ]
+  }
+}

@@ -1,0 +1,15 @@
+{
+  "hooks": {
+    "AfterModel": [
+      {
+        "hooks": [
+          {
+            "name": "jarvis-audio",
+            "type": "command",
+            "command": "python3 hooks/after_model.py"
+          }
+        ]
+      }
+    ]
+  }
+}
