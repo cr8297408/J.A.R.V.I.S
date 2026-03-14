@@ -1,0 +1,5 @@
+pyaudio
+webrtcvad
+setuptools
+numpy
+google-generativeai
