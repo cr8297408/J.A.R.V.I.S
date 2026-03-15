@@ -3,3 +3,6 @@ webrtcvad
 setuptools
 numpy
 google-generativeai
+groq
+openai
+python-dotenv

@@ -12,6 +12,10 @@ def main():
     # 1. Regla de Oro: Leer el JSON de sys.stdin silenciosamente
     try:
         raw_input = sys.stdin.read()
+        print(
+            f"[JARVIS HOOK DEBUG] Received {len(raw_input)} bytes from stdin",
+            file=sys.stderr,
+        )
         if not raw_input:
             # Si no hay entrada, salimos limpiamente para no crashear la CLI
             print(json.dumps({"decision": "allow"}))
@@ -45,15 +49,16 @@ def main():
                 else:
                     chunk = str(parts[0])
 
-                # 3. Mandar el chunk al demonio Jarvis por socket TCP de forma bloqueante rápida
+                # 3. Mandar el chunk al demonio Jarvis por socket TCP
                 try:
                     with socket.create_connection(
-                        (DAEMON_HOST, DAEMON_PORT), timeout=1.0
+                        (DAEMON_HOST, DAEMON_PORT), timeout=2.0
                     ) as sock:
-                        # Mandamos solo el chunk limpio codificado en UTF-8 y un newline
-                        sock.sendall(f"{chunk}\n".encode("utf-8"))
-                        # Esperar un simple ACK del server (1 byte) para no saturarnos,
-                        # pero no nos quedamos colgados.
+                        # Mandamos el texto completo codificado en UTF-8
+                        sock.sendall(chunk.encode("utf-8"))
+                        # Cerramos la parte de escritura para enviar EOF
+                        sock.shutdown(socket.SHUT_WR)
+                        # Esperar un simple ACK del server (1 byte)
                         _ = sock.recv(1)
                 except Exception as e:
                     print(

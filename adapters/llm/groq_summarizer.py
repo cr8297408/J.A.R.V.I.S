@@ -1,23 +1,22 @@
 import os
-import google.generativeai as genai
-import logging
 import json
+import logging
+from groq import AsyncGroq
 
 
-class GeminiSummarizer:
+class GroqSummarizer:
     """
-    Adaptador para la API de Gemini Flash.
-    Su responsabilidad es actuar como el cerebro de J.A.R.V.I.S.,
-    decidiendo si vale la pena interrumpir al usuario y qué decirle.
+    Adaptador para la API de Groq (Llama 3.3).
+    Actúa como el cerebro rápido de Jarvis usando una API compatible con OpenAI.
     """
 
     def __init__(self):
-        api_key = os.getenv("GEMINI_API_KEY")
+        api_key = os.getenv("GROQ_API_KEY")
         if not api_key:
-            raise ValueError("Falta la variable de entorno GEMINI_API_KEY.")
+            raise ValueError("Falta la variable de entorno GROQ_API_KEY.")
 
-        genai.configure(api_key=api_key)
-        self.model = genai.GenerativeModel("gemini-2.5-flash")
+        self.client = AsyncGroq(api_key=api_key)
+        self.model = "llama-3.3-70b-versatile"
 
         self.system_prompt = """
 Eres J.A.R.V.I.S. (Just A Rather Very Intelligent System), un agente de IA de ciclo completo y asistente personal del creador.
@@ -35,27 +34,33 @@ PERSONALIDAD Y TONO:
 - NUNCA leas código, rutas de archivos largas, asteriscos, ni uses formato markdown. Habla como lo haría un humano.
 
 FORMATO DE SALIDA ESTRICTO (JSON):
-Debes responder ÚNICAMENTE con un objeto JSON válido con la siguiente estructura, sin backticks de markdown:
+Debes responder ÚNICAMENTE con un objeto JSON válido con la siguiente estructura:
 {
-  "reasoning": "Tu análisis interno de por qué decides hablar o guardar silencio (simulación predictiva).",
+  "reasoning": "Tu análisis interno de por qué decides hablar o guardar silencio.",
   "should_speak": true o false,
   "speech_content": "El texto exacto que dirás por TTS (vacío si should_speak es false)"
 }
 """
 
     async def summarize(self, raw_text: str, user_command: str = "") -> dict:
-        prompt = f"{self.system_prompt}\n\n[ÚLTIMO COMANDO DEL USUARIO]:\n{user_command}\n\n[SALIDA CRUDA DE LA TERMINAL A EVALUAR]:\n{raw_text}\n\n[TU RESPUESTA EN JSON]:"
+        prompt = f"[ÚLTIMO COMANDO DEL USUARIO]:\n{user_command}\n\n[SALIDA CRUDA DE LA TERMINAL A EVALUAR]:\n{raw_text}\n\nAnaliza esta salida y responde ÚNICAMENTE con JSON válido."
+
         try:
-            response = await self.model.generate_content_async(
-                prompt,
-                generation_config=genai.GenerationConfig(
-                    response_mime_type="application/json"
-                ),
+            response = await self.client.chat.completions.create(
+                model=self.model,
+                messages=[
+                    {"role": "system", "content": self.system_prompt},
+                    {"role": "user", "content": prompt},
+                ],
+                response_format={"type": "json_object"},
+                temperature=0.3,
             )
-            result = json.loads(response.text.strip())
-            return result
+
+            content = response.choices[0].message.content
+            return json.loads(content)
+
         except Exception as e:
-            logging.error(f"Error en Jarvis Brain: {e}")
+            logging.error(f"Error en Jarvis Brain (Groq): {e}")
             return {
                 "reasoning": f"Fallback por error: {str(e)}",
                 "should_speak": False,

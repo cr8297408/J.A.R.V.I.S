@@ -21,17 +21,43 @@ project_root = os.path.dirname(
 sys.path.insert(0, project_root)
 
 from core.lexer.poc_lexer import StreamingLexer
-from core.audio.vad_listener import start_vad_thread, awaiting_tool_permission
-from adapters.llm.gemini_summarizer import GeminiSummarizer
+from core.audio.vad_listener import (
+    start_vad_thread,
+    awaiting_tool_permission,
+    user_context,
+)
 from adapters.tts.mac_say_tts import MacSayTTS
 from adapters.stt.ghost_typer import GhostTyper
+
+# Importar dotenv para cargar variables de entorno
+from dotenv import load_dotenv
+
+load_dotenv()
 
 # Evento global de Barge-in (Si se pone en True, el TTS se calla)
 interrupt_event = threading.Event()
 
+# Selección dinámica del cerebro (LLM) según el .env
+active_brain = os.getenv("ACTIVE_BRAIN_ENGINE", "gemini").lower()
+
+if active_brain == "groq":
+    from adapters.llm.groq_summarizer import GroqSummarizer
+
+    summarizer = GroqSummarizer()
+    logging.info("🧠 Cerebro activado: Groq (Llama 3.3)")
+elif active_brain == "openrouter":
+    from adapters.llm.openrouter_summarizer import OpenRouterSummarizer
+
+    summarizer = OpenRouterSummarizer()
+    logging.info("🧠 Cerebro activado: OpenRouter")
+else:
+    from adapters.llm.gemini_summarizer import GeminiSummarizer
+
+    summarizer = GeminiSummarizer()
+    logging.info("🧠 Cerebro activado: Google AI Studio (Gemini)")
+
 # Componentes globales del pipeline
 lexer = StreamingLexer()
-summarizer = GeminiSummarizer()
 tts = MacSayTTS()
 
 # Cola asíncrona para procesar los chunks que llegan por el socket en orden
@@ -57,25 +83,24 @@ async def process_text_queue():
                 try:
                     payload = json.loads(payload_str)
                     if payload.get("notification_type") == "ToolPermission":
-                        msg = payload.get(
-                            "message", "Tool permission required."
+                        # Adaptamos el prompt del sistema al estilo Jarvis para notificaciones
+                        tool_name = payload.get(
+                            "tool_name", "una herramienta desconocida"
                         )
-                        prompt = f"{msg}. Say 1 to allow once, 2 to allow for this session, or 3 to deny."
+                        prompt = f"Señor, el protocolo requiere autorización para ejecutar un comando. Diga uno para permitir una vez, dos para la sesión, o tres para denegar."
                         logging.info(
                             "Notificación de herramienta detectada. Avisando al usuario."
                         )
-                        tts.speak(prompt, interrupt_event)
+                        await asyncio.to_thread(tts.speak, prompt, interrupt_event)
                         awaiting_tool_permission.set()
                 except Exception as e:
                     logging.error(f"Error parseando notificación: {e}")
                 text_queue.task_done()
                 continue
 
-            # Si el usuario interrumpió hace poco (habló), limpiamos el estado del lexer
-            # para no decir la mitad de una frase vieja o quedarnos atrapados en un bloque de código
+            # Si el usuario interrumpió hace poco (habló), limpiamos el estado
             if interrupt_event.is_set():
-                logging.info("Barge-in detectado: Reseteando Lexer y vaciando cola.")
-                lexer.reset()  # Necesitamos agregar este método al Lexer
+                logging.info("Barge-in detectado: Vaciando cola.")
                 interrupt_event.clear()
 
                 # Vaciar la cola actual de texto viejo
@@ -87,26 +112,34 @@ async def process_text_queue():
                         break
                 continue
 
-            # Procesamos el token con el Lexer
-            chunk_type, content = await lexer.process_token(chunk)
+            # Log para debuggear el payload
+            logging.info(f"Procesando bloque de salida (len: {len(chunk)})")
 
-            if chunk_type == "TEXT_CHUNK" and content:
-                logging.info(f"Hablando texto: {content}")
-                # El TTS bloquea, pero eso está bien porque queremos que hable antes de seguir procesando.
-                # Si necesitamos que no bloquee todo el demonio, podríamos correrlo en un executor,
-                # pero para mantener el orden secuencial del habla, bloquear acá es correcto.
-                tts.speak(content, interrupt_event)
-
-            elif chunk_type == "CODE_BLOCK" and content:
+            # En vez de usar el Lexer para texto plano, enviamos todo al Cerebro J.A.R.V.I.S.
+            # para que decida de forma autónoma si debe hablar o guardar silencio.
+            try:
                 logging.info(
-                    f"Resumiendo bloque de código de {len(content)} caracteres..."
+                    "Consultando al cerebro J.A.R.V.I.S. si debe intervenir..."
                 )
-                try:
-                    resumen = await summarizer.summarize(content)
-                    logging.info(f"Resumen generado: {resumen}")
-                    tts.speak(resumen, interrupt_event)
-                except Exception as e:
-                    logging.error(f"Error resumiendo código con Gemini Flash: {e}")
+                last_cmd = user_context.get("last_command", "")
+                decision = await summarizer.summarize(chunk, last_cmd)
+
+                reasoning = decision.get("reasoning", "Sin razonamiento")
+                should_speak = decision.get("should_speak", False)
+                speech = decision.get("speech_content", "")
+
+                logging.info(f"[Cerebro JARVIS] Razonamiento: {reasoning}")
+
+                if should_speak and speech:
+                    logging.info(f"[Cerebro JARVIS] Decidió hablar: {speech}")
+                    await asyncio.to_thread(tts.speak, speech, interrupt_event)
+                else:
+                    logging.info(
+                        "[Cerebro JARVIS] Decidió mantener silencio (Filtrando ruido cognitivo)."
+                    )
+
+            except Exception as e:
+                logging.error(f"Error procesando decisión de Jarvis: {e}")
 
             text_queue.task_done()
 
@@ -117,13 +150,11 @@ async def process_text_queue():
 async def handle_client(reader: asyncio.StreamReader, writer: asyncio.StreamWriter):
     """
     Maneja las conexiones TCP entrantes del hook script.
-    Lee el chunk, lo encola y responde con un ACK instantáneo.
+    Lee el chunk completo, lo encola y responde con un ACK instantáneo.
     """
     addr = writer.get_extra_info("peername")
     try:
-        data = await reader.read(
-            8192
-        )  # Leer hasta 8KB (suficiente para un chunk de LLM)
+        data = await reader.read()  # Leer hasta EOF
         if data:
             chunk = data.decode("utf-8").strip()
             if chunk:

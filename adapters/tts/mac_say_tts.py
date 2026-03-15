@@ -21,8 +21,17 @@ class MacSayTTS:
         # Limpiamos caracteres que puedan romper el comando say de bash
         clean_text = text.replace("'", "").replace('"', "")
 
+        # Eliminamos saltos de línea y dobles espacios que causan pausas raras y cortes en el TTS de Apple
+        import re
+
+        clean_text = re.sub(r"\s+", " ", clean_text).strip()
+
         # Invocamos al sistema operativo SIN BLOQUEAR (Popen)
-        self.current_process = subprocess.Popen(["say", clean_text])
+        # Usamos la voz "Daniel" y aumentamos ligeramente la velocidad (-r 200) para darle más fluidez
+        # Puedes cambiar la voz a "Mónica" (es_ES) o "Paulina" (es_MX) si prefieres español nativo.
+        self.current_process = subprocess.Popen(
+            ["say", "-v", "Daniel", "-r", "200", clean_text]
+        )
 
         # Bucle de monitoreo (El corazón del Barge-in del lado del reproductor)
         while (

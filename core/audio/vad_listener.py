@@ -11,6 +11,9 @@ from adapters.stt.ghost_typer import GhostTyper
 
 awaiting_tool_permission = threading.Event()
 
+# Contexto global para compartir con el demonio
+user_context = {"last_command": ""}
+
 
 def play_sfx(sound_name):
     """Reproduce sonidos nativos de Mac para feedback no bloqueante."""
@@ -41,7 +44,7 @@ def start_vad_thread(interrupt_event: threading.Event):
             # Los modelos ahora están descargados correctamente dentro del paquete de openwakeword
             owwModel = Model(wakeword_models=["hey_jarvis"], inference_framework="onnx")
             stt_engine = LocalSTT()
-            vad = webrtcvad.Vad(2)  # Agresividad media (0-3) para detectar silencio
+            vad = webrtcvad.Vad(3)  # Agresividad MÁXIMA (3) para ignorar ruido de fondo
         except Exception as e:
             logging.error(f"Fallo cargando modelos: {e}")
             return
@@ -73,6 +76,12 @@ def start_vad_thread(interrupt_event: threading.Event):
             recording_frames = []  # Para guardar el comando entero
             silence_chunks = 0
             MAX_SILENCE_CHUNKS = 50  # ~1.5 segundos de silencio a 30ms por chunk
+            MAX_RECORDING_CHUNKS = (
+                500  # ~15 segundos máximo absoluto (500 * 30ms = 15s)
+            )
+            MIN_RMS_THRESHOLD = (
+                300  # Umbral de volumen para ignorar ruido de fondo bajo
+            )
 
             while True:
                 raw_audio = stream.read(CHUNK, exception_on_overflow=False)
@@ -126,16 +135,33 @@ def start_vad_thread(interrupt_event: threading.Event):
                 elif state == "RECORDING_COMMAND":
                     recording_frames.append(raw_audio)
 
-                    # Chequear silencio con WebRTCVAD
+                    # 1. Calcular volumen (RMS) del chunk actual
+                    audio_data_chunk = np.frombuffer(raw_audio, dtype=np.int16)
+                    rms = np.sqrt(
+                        np.mean(np.square(audio_data_chunk.astype(np.float32)))
+                    )
+
+                    # 2. Chequear silencio con WebRTCVAD
                     is_speech = vad.is_speech(raw_audio, RATE)
-                    if not is_speech:
+
+                    # Si VAD dice que es silencio, o el volumen es demasiado bajo (ruido de fondo)
+                    if not is_speech or rms < MIN_RMS_THRESHOLD:
                         silence_chunks += 1
                     else:
-                        silence_chunks = 0  # Resetear si detecta voz
+                        silence_chunks = 0  # Resetear si detecta voz fuerte real
 
-                    # Si detectó ~1.5s de silencio, termina de grabar
-                    if silence_chunks > MAX_SILENCE_CHUNKS:
-                        logging.info("Silencio detectado. Procesando comando...")
+                    # Si detectó ~1.5s de silencio o pasamos el límite absoluto de tiempo
+                    if (
+                        silence_chunks > MAX_SILENCE_CHUNKS
+                        or len(recording_frames) > MAX_RECORDING_CHUNKS
+                    ):
+                        if len(recording_frames) > MAX_RECORDING_CHUNKS:
+                            logging.info(
+                                "Límite máximo de grabación (15s) alcanzado. Cortando..."
+                            )
+                        else:
+                            logging.info("Silencio detectado. Procesando comando...")
+
                         play_sfx("stop")
                         state = "PROCESSING"
 
@@ -157,6 +183,9 @@ def start_vad_thread(interrupt_event: threading.Event):
                             text = stt_engine.transcribe(temp_wav)
                             if text:
                                 logging.info(f"Comando transcrito: {text}")
+                                user_context["last_command"] = (
+                                    text  # Guardamos contexto para Jarvis
+                                )
                                 if is_tool:
                                     t_lower = text.lower()
                                     if any(
