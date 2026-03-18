@@ -5,6 +5,7 @@ import logging
 import wave
 import subprocess
 import webrtcvad
+import asyncio
 from openwakeword.model import Model
 from adapters.stt.mlx_stt import LocalSTT
 from adapters.stt.ghost_typer import GhostTyper
@@ -12,7 +13,7 @@ from adapters.stt.ghost_typer import GhostTyper
 awaiting_tool_permission = threading.Event()
 
 # Contexto global para compartir con el demonio
-user_context = {"last_command": ""}
+user_context = {"last_command": "", "last_speech": "", "last_terminal_output": ""}
 
 
 def play_sfx(sound_name):
@@ -27,7 +28,9 @@ def play_sfx(sound_name):
         subprocess.Popen(["afplay", path])
 
 
-def start_vad_thread(interrupt_event: threading.Event):
+def start_vad_thread(
+    interrupt_event: threading.Event, summarizer=None, tts=None, loop=None
+):
     """
     Máquina de estados de Escucha Activa:
     1. Espera 'Hey Jarvis' (Wake Word).
@@ -150,6 +153,16 @@ def start_vad_thread(interrupt_event: threading.Event):
                     else:
                         silence_chunks = 0  # Resetear si detecta voz fuerte real
 
+                        # Barge-in (Interrupción): Si estamos esperando permiso para herramienta y escuchamos
+                        # una voz humana suficientemente fuerte, cortamos el habla de Jarvis al instante.
+                        # Usamos un umbral un poco más alto (ej: 500) para que el eco del propio altavoz no se auto-silencie.
+                        if awaiting_tool_permission.is_set() and rms > 500:
+                            if not interrupt_event.is_set():
+                                logging.info(
+                                    "Barge-in: Voz del usuario detectada, silenciando petición de permiso."
+                                )
+                                interrupt_event.set()
+
                     # Si detectó ~1.5s de silencio o pasamos el límite absoluto de tiempo
                     if (
                         silence_chunks > MAX_SILENCE_CHUNKS
@@ -183,9 +196,8 @@ def start_vad_thread(interrupt_event: threading.Event):
                             text = stt_engine.transcribe(temp_wav)
                             if text:
                                 logging.info(f"Comando transcrito: {text}")
-                                user_context["last_command"] = (
-                                    text  # Guardamos contexto para Jarvis
-                                )
+                                user_context["last_command"] = text
+
                                 if is_tool:
                                     t_lower = text.lower()
                                     if any(
@@ -230,7 +242,62 @@ def start_vad_thread(interrupt_event: threading.Event):
                                     else:
                                         GhostTyper.type_string(text)
                                 else:
-                                    GhostTyper.type_string(text)
+                                    # Modo conversacional normal. Evaluamos intención si hay un summarizer.
+                                    if (
+                                        summarizer
+                                        and loop
+                                        and hasattr(summarizer, "evaluate_intent")
+                                    ):
+                                        logging.info(
+                                            "Evaluando intención del usuario con J.A.R.V.I.S..."
+                                        )
+                                        try:
+                                            # Llamar a la corrutina de forma síncrona usando run_coroutine_threadsafe
+                                            future = asyncio.run_coroutine_threadsafe(
+                                                summarizer.evaluate_intent(
+                                                    text, user_context
+                                                ),
+                                                loop,
+                                            )
+                                            decision = future.result(
+                                                timeout=10.0
+                                            )  # Esperamos hasta 10 segundos
+
+                                            action = decision.get(
+                                                "action", "type_in_terminal"
+                                            )
+                                            reasoning = decision.get(
+                                                "reasoning", "Sin razonamiento"
+                                            )
+                                            logging.info(
+                                                f"[Cerebro Intención] {reasoning} -> {action}"
+                                            )
+
+                                            if (
+                                                action == "speak_directly"
+                                                and tts
+                                                and decision.get("direct_response")
+                                            ):
+                                                logging.info(
+                                                    f"[Cerebro Intención] Respondiendo directo: {decision['direct_response']}"
+                                                )
+                                                user_context["last_speech"] = decision[
+                                                    "direct_response"
+                                                ]
+                                                tts.speak(
+                                                    decision["direct_response"],
+                                                    interrupt_event,
+                                                )
+                                            else:
+                                                GhostTyper.type_string(text)
+
+                                        except Exception as e:
+                                            logging.error(
+                                                f"Error evaluando intención, usando fallback: {e}"
+                                            )
+                                            GhostTyper.type_string(text)
+                                    else:
+                                        GhostTyper.type_string(text)
                             else:
                                 play_sfx("error")
 

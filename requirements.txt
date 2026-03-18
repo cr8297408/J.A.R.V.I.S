@@ -6,3 +6,4 @@ google-generativeai
 groq
 openai
 python-dotenv
+edge-tts>=7.2.7

@@ -22,6 +22,7 @@ class GhostTyper:
         cwd = os.getcwd()
 
         # Usar AppleScript para abrir una sola ventana en la ruta correcta.
+        # Agregamos "exit" al final para que la ventana pueda cerrarse si el proceso muere.
         script = f'''
         tell application "{target_app}"
             if not (exists window 1) then reopen
@@ -31,9 +32,9 @@ class GhostTyper:
             -- Si la ventana activa está libre (ej. recién iniciada la app), la usamos.
             -- Si está ocupada (ej. corriendo el daemon o cualquier otra cosa), abrimos otra.
             if not busy of window 1 then
-                do script "cd '{cwd}' && clear && gemini" in window 1
+                do script "cd '{cwd}' && clear && gemini; exit" in window 1
             else
-                do script "cd '{cwd}' && clear && gemini"
+                do script "cd '{cwd}' && clear && gemini; exit"
             end if
         end tell
         '''
@@ -102,6 +103,7 @@ class GhostTyper:
             )
             logging.info("Texto pegado y enviado con éxito.")
         except subprocess.CalledProcessError as e:
+            error_msg = e.stderr.strip()
             logging.error(f"Error de Permisos en macOS inyectando texto.")
             logging.error("¡ATENCIÓN! Necesitas darle permisos a la Terminal en macOS:")
             logging.error(
@@ -110,4 +112,25 @@ class GhostTyper:
             logging.error(
                 "2. Activa el interruptor para tu aplicación de Terminal (iTerm, Terminal, VSCode, Cursor, etc)."
             )
-            logging.error(f"Detalle del error de AppleScript: {e.stderr.strip()}")
+            logging.error(f"Detalle del error de AppleScript: {error_msg}")
+
+            if (
+                "1002" in error_msg
+                or "no tiene permitido" in error_msg
+                or "not allowed" in error_msg
+            ):
+                try:
+                    from adapters.tts.mac_say_tts import MacSayTTS
+                    import threading
+
+                    logging.info(
+                        "Avisando al usuario por voz sobre el problema de permisos..."
+                    )
+                    tts = MacSayTTS()
+                    dummy_event = threading.Event()
+                    tts.speak(
+                        "Señor, mis protocolos de escritura están bloqueados. Necesito permisos de accesibilidad en las preferencias del sistema para poder escribir por usted.",
+                        dummy_event,
+                    )
+                except Exception as ex:
+                    logging.error(f"Error reproduciendo aviso de TTS: {ex}")

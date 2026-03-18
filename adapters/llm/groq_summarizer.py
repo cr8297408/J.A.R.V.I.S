@@ -56,6 +56,79 @@ Debes responder ÚNICAMENTE con un objeto JSON válido con la siguiente estructu
                 temperature=0.3,
             )
 
+            content = response.choices[0].message.content or "{}"
+            return json.loads(content)
+
+        except Exception as e:
+            logging.error(f"Error en Jarvis Brain (Groq): {e}")
+            return {
+                "reasoning": f"Fallback por error: {str(e)}",
+                "should_speak": False,
+                "speech_content": "",
+            }
+
+    async def evaluate_intent(self, user_input: str, context: dict) -> dict:
+        """
+        Evalúa si la entrada del usuario debe ser inyectada en la terminal
+        o si puede ser respondida directamente basándose en el contexto reciente.
+        """
+        last_speech = context.get("last_speech", "Ninguno")
+        last_terminal = context.get("last_terminal_output", "Ninguna")
+
+        prompt = f"""El usuario acaba de decirte: "{user_input}"
+
+[CONTEXTO RECIENTE]
+Última salida de la terminal: {last_terminal}
+Lo último que tú le dijiste al usuario: {last_speech}
+
+Decide la siguiente acción:
+A) "speak_directly": El usuario te está haciendo una pregunta de seguimiento directo, pidiendo aclaración, o charlando sobre lo que le acabas de decir. Puedes responderle directamente basándote en el contexto reciente SIN necesidad de escribir nada en la terminal.
+B) "type_in_terminal": El usuario te está pidiendo que hagas algo nuevo, busques información nueva, o ejecutes un comando (ej. "profundiza en X" (si no está en el texto), "busca Y", "crea un archivo"). Debes pasarlo a la terminal.
+
+Responde ÚNICAMENTE con JSON válido:
+{{
+  "action": "speak_directly" o "type_in_terminal",
+  "reasoning": "Tu razonamiento corto",
+  "direct_response": "Tu respuesta hablada (solo si action es speak_directly, si no vacío)"
+}}
+"""
+        try:
+            response = await self.client.chat.completions.create(
+                model=self.model,
+                messages=[
+                    {
+                        "role": "system",
+                        "content": "Eres J.A.R.V.I.S., un agente de IA. Debes clasificar la intención del usuario.",
+                    },
+                    {"role": "user", "content": prompt},
+                ],
+                response_format={"type": "json_object"},
+                temperature=0.2,
+            )
+
+            content = response.choices[0].message.content or "{}"
+            return json.loads(content)
+
+        except Exception as e:
+            logging.error(f"Error evaluando intención (Groq): {e}")
+            return {
+                "action": "type_in_terminal",
+                "reasoning": f"Fallback por error: {str(e)}",
+                "direct_response": "",
+            }
+        prompt = f"[ÚLTIMO COMANDO DEL USUARIO]:\n{user_command}\n\n[SALIDA CRUDA DE LA TERMINAL A EVALUAR]:\n{raw_text}\n\nAnaliza esta salida y responde ÚNICAMENTE con JSON válido."
+
+        try:
+            response = await self.client.chat.completions.create(
+                model=self.model,
+                messages=[
+                    {"role": "system", "content": self.system_prompt},
+                    {"role": "user", "content": prompt},
+                ],
+                response_format={"type": "json_object"},
+                temperature=0.3,
+            )
+
             content = response.choices[0].message.content
             return json.loads(content)
 

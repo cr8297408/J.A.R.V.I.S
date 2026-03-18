@@ -26,7 +26,7 @@ from core.audio.vad_listener import (
     awaiting_tool_permission,
     user_context,
 )
-from adapters.tts.mac_say_tts import MacSayTTS
+from adapters.tts.edge_tts_adapter import EdgeTTS
 from adapters.stt.ghost_typer import GhostTyper
 
 # Importar dotenv para cargar variables de entorno
@@ -58,36 +58,85 @@ else:
 
 # Componentes globales del pipeline
 lexer = StreamingLexer()
-tts = MacSayTTS()
+tts = EdgeTTS()
 
 # Cola asíncrona para procesar los chunks que llegan por el socket en orden
 text_queue = asyncio.Queue()
 
 
+async def evaluar_y_hablar(texto_acumulado: str):
+    """Envía un bloque de texto consolidado al Cerebro J.A.R.V.I.S."""
+    if not texto_acumulado.strip():
+        return
+
+    logging.info(
+        f"Procesando bloque de salida consolidado (len: {len(texto_acumulado)})"
+    )
+    try:
+        logging.info("Consultando al cerebro J.A.R.V.I.S. si debe intervenir...")
+        last_cmd = user_context.get("last_command", "")
+        decision = await summarizer.summarize(texto_acumulado, last_cmd)
+
+        reasoning = decision.get("reasoning", "Sin razonamiento")
+        should_speak = decision.get("should_speak", False)
+        speech = decision.get("speech_content", "")
+
+        logging.info(f"[Cerebro JARVIS] Razonamiento: {reasoning}")
+
+        if should_speak and speech:
+            user_context["last_speech"] = speech
+            user_context["last_terminal_output"] = texto_acumulado
+            logging.info(f"[Cerebro JARVIS] Decidió hablar: {speech}")
+            await asyncio.to_thread(tts.speak, speech, interrupt_event)
+        else:
+            logging.info(
+                "[Cerebro JARVIS] Decidió mantener silencio (Filtrando ruido cognitivo)."
+            )
+    except Exception as e:
+        logging.error(f"Error procesando decisión de Jarvis: {e}")
+
+
 async def process_text_queue():
     """
     Este es el 'Cerebro' asíncrono.
-    Desencola los chunks que llegan por el socket, los pasa por el Lexer,
-    resume el código si es necesario y dispara el TTS.
+    Desencola los chunks que llegan por el socket, los acumula (debounce)
+    para no evaluar fragmentos cortados, y luego los pasa al LLM.
     """
     logging.info("Motor de procesamiento de texto iniciado.")
 
+    buffer = ""
+
     while True:
         try:
-            chunk = await text_queue.get()
+            if not buffer:
+                # Si el buffer está vacío, esperar indefinidamente un chunk
+                chunk = await text_queue.get()
+            else:
+                # Si tenemos texto acumulado, esperamos un poco más (debounce).
+                # Si no llega nada en 1.5 segundos, asumimos que la terminal terminó de escupir datos.
+                try:
+                    chunk = await asyncio.wait_for(text_queue.get(), timeout=1.5)
+                except asyncio.TimeoutError:
+                    # Se acabó el tiempo, procesar lo que tenemos acumulado
+                    await evaluar_y_hablar(buffer)
+                    buffer = ""
+                    continue
+
+            # --- Procesamiento del chunk recibido ---
 
             if chunk.startswith("__NOTIFICATION__"):
+                # Si nos llega una notificación y teníamos texto acumulado, lo evaluamos primero
+                if buffer:
+                    await evaluar_y_hablar(buffer)
+                    buffer = ""
+
                 payload_str = chunk[16:]
                 import json
 
                 try:
                     payload = json.loads(payload_str)
                     if payload.get("notification_type") == "ToolPermission":
-                        # Adaptamos el prompt del sistema al estilo Jarvis para notificaciones
-                        tool_name = payload.get(
-                            "tool_name", "una herramienta desconocida"
-                        )
-                        prompt = f"Señor, el protocolo requiere autorización para ejecutar un comando. Diga uno para permitir una vez, dos para la sesión, o tres para denegar."
+                        prompt = "Señor, el protocolo requiere autorización para ejecutar un comando. Diga uno para permitir una vez, dos para la sesión, o tres para denegar."
                         logging.info(
                             "Notificación de herramienta detectada. Avisando al usuario."
                         )
@@ -95,13 +144,15 @@ async def process_text_queue():
                         awaiting_tool_permission.set()
                 except Exception as e:
                     logging.error(f"Error parseando notificación: {e}")
+
                 text_queue.task_done()
                 continue
 
             # Si el usuario interrumpió hace poco (habló), limpiamos el estado
             if interrupt_event.is_set():
-                logging.info("Barge-in detectado: Vaciando cola.")
+                logging.info("Barge-in detectado: Vaciando cola y buffer.")
                 interrupt_event.clear()
+                buffer = ""
 
                 # Vaciar la cola actual de texto viejo
                 while not text_queue.empty():
@@ -112,35 +163,8 @@ async def process_text_queue():
                         break
                 continue
 
-            # Log para debuggear el payload
-            logging.info(f"Procesando bloque de salida (len: {len(chunk)})")
-
-            # En vez de usar el Lexer para texto plano, enviamos todo al Cerebro J.A.R.V.I.S.
-            # para que decida de forma autónoma si debe hablar o guardar silencio.
-            try:
-                logging.info(
-                    "Consultando al cerebro J.A.R.V.I.S. si debe intervenir..."
-                )
-                last_cmd = user_context.get("last_command", "")
-                decision = await summarizer.summarize(chunk, last_cmd)
-
-                reasoning = decision.get("reasoning", "Sin razonamiento")
-                should_speak = decision.get("should_speak", False)
-                speech = decision.get("speech_content", "")
-
-                logging.info(f"[Cerebro JARVIS] Razonamiento: {reasoning}")
-
-                if should_speak and speech:
-                    logging.info(f"[Cerebro JARVIS] Decidió hablar: {speech}")
-                    await asyncio.to_thread(tts.speak, speech, interrupt_event)
-                else:
-                    logging.info(
-                        "[Cerebro JARVIS] Decidió mantener silencio (Filtrando ruido cognitivo)."
-                    )
-
-            except Exception as e:
-                logging.error(f"Error procesando decisión de Jarvis: {e}")
-
+            # Acumular el texto normal de la terminal en lugar de procesarlo inmediatamente
+            buffer += chunk + "\n"
             text_queue.task_done()
 
         except Exception as e:
@@ -193,11 +217,12 @@ def main():
 
     # 2. Arrancamos el Micrófono (VAD) en un hilo demonio para el Barge-in
     logging.info("Iniciando motor VAD (Voice Activity Detection)...")
-    start_vad_thread(interrupt_event)
+    loop = asyncio.get_event_loop()
+    start_vad_thread(interrupt_event, summarizer, tts, loop)
 
     # 3. Arrancamos el servidor TCP Asíncrono en el hilo principal
     try:
-        asyncio.run(start_server())
+        loop.run_until_complete(start_server())
     except KeyboardInterrupt:
         logging.info("Apagando Jarvis Daemon...")
     except Exception as e:
