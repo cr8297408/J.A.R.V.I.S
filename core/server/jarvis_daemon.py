@@ -215,18 +215,26 @@ def main():
     logging.info("Aislando entorno: Lanzando Terminal nueva con Gemini...")
     GhostTyper.launch_gemini_terminal()
 
-    # 2. Arrancamos el Micrófono (VAD) en un hilo demonio para el Barge-in
+    # 2. Inicializamos el bucle de eventos principal (asyncio)
+    try:
+        loop = asyncio.get_running_loop()
+    except RuntimeError:
+        loop = asyncio.new_event_loop()
+        asyncio.set_event_loop(loop)
+
+    # 3. Arrancamos el Micrófono (VAD) en un hilo demonio para el Barge-in
     logging.info("Iniciando motor VAD (Voice Activity Detection)...")
-    loop = asyncio.get_event_loop()
     start_vad_thread(interrupt_event, summarizer, tts, loop)
 
-    # 3. Arrancamos el servidor TCP Asíncrono en el hilo principal
+    # 4. Arrancamos el servidor TCP Asíncrono en el hilo principal
     try:
         loop.run_until_complete(start_server())
     except KeyboardInterrupt:
         logging.info("Apagando Jarvis Daemon...")
     except Exception as e:
         logging.critical(f"Error fatal en el Demonio: {e}")
+    finally:
+        loop.close()
 
 
 if __name__ == "__main__":
