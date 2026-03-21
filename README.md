@@ -1,3 +1,10 @@
+<div align="right">
+
+[![🇺🇸 English](https://img.shields.io/badge/🇺🇸-English-blue?style=for-the-badge)](./README.md)
+[![🇪🇸 Español](https://img.shields.io/badge/🇪🇸-Español-red?style=for-the-badge)](./README.es.md)
+
+</div>
+
 # J.A.R.V.I.S. — Gemini Voice CLI Extension
 
 > *Just A Rather Very Intelligent System*
