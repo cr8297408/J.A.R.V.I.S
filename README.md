@@ -100,7 +100,7 @@ gemini-extension-spech/
 │   ├── after_model.py          # Gemini CLI hook: pipes LLM output to daemon
 │   └── notification.py         # Gemini CLI notification hook
 ├── apps/
-│   └── jarvis-landing/         # Landing page web app
+│   └── jarvis-landing/         # Landing page web app (React + @smart-coder-labs/apple-design-system)
 ├── install.sh                  # One-command installer (macOS + Linux)
 ├── start.sh                    # Launch script (activates venv + runs main.py)
 ├── requirements.txt
@@ -280,6 +280,25 @@ tail -f debug_jarvis.log
 - [ ] Local TTS with Kokoro / Piper
 - [ ] Full Linux support for MLX STT (alternative Whisper backend)
 - [ ] Configuration UI via the landing page
+
+---
+
+## 🌐 Landing Page
+
+The project landing page is built with **React + Vite** and uses the [**@smart-coder-labs/apple-design-system**](https://www.npmjs.com/package/@smart-coder-labs/apple-design-system) — an Apple-inspired component library with Framer Motion animations, glassmorphism effects, dark mode, and full TypeScript support.
+
+| Tech | Role |
+|---|---|
+| React 18 + Vite | SPA framework |
+| Tailwind CSS v3 | Utility styling |
+| `@smart-coder-labs/apple-design-system` | UI components (NavBar, Button, Card, Modal, Badge, Divider) |
+| Framer Motion | Animations & gestures |
+
+```bash
+cd apps/jarvis-landing
+pnpm install
+pnpm dev
+```
 
 ---
 

@@ -1,0 +1,4 @@
+{
+  "componentsDir": "./src/components/ui",
+  "globalCss": "./src/styles/apple-ds.css"
+}
