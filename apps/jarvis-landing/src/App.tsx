@@ -4,6 +4,13 @@ import SubscribeFAB from './components/SubscribeFAB';
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Separator } from "@/components/ui/separator";
+import {
+  Dialog,
+  DialogContent,
+  DialogHeader,
+  DialogTitle,
+  DialogTrigger,
+} from "@/components/ui/dialog";
 import { Github, Play, ArrowRight, Send, Youtube, Twitch, MessageSquare } from "lucide-react";
 import './styles/App.css';
 
@@ -50,9 +57,29 @@ const App: React.FC = () => {
               <Button size="lg" className="h-12 px-8">
                 Comenzar ahora <ArrowRight className="ml-2 h-5 w-5" />
               </Button>
-              <Button size="lg" variant="outline" className="h-12 px-8">
-                <Play className="mr-2 h-5 w-5 fill-current" /> Ver Demo
-              </Button>
+              <Dialog>
+                <DialogTrigger asChild>
+                  <Button size="lg" variant="outline" className="h-12 px-8">
+                    <Play className="mr-2 h-5 w-5 fill-current" /> Ver Demo
+                  </Button>
+                </DialogTrigger>
+                <DialogContent className="sm:max-w-[800px] bg-background border-blue-500/20 shadow-2xl shadow-blue-500/10">
+                  <DialogHeader>
+                    <DialogTitle className="text-2xl font-bold">J.A.R.V.I.S. Demo</DialogTitle>
+                  </DialogHeader>
+                  <div className="aspect-video mt-4 overflow-hidden rounded-xl border border-blue-500/20 bg-black">
+                    <iframe
+                      width="100%"
+                      height="100%"
+                      src="https://www.youtube.com/embed/dQw4w9WgXcQ"
+                      title="J.A.R.V.I.S. Demo"
+                      frameBorder="0"
+                      allow="accelerometer; autoplay; clipboard-write; encrypted-media; gyroscope; picture-in-picture"
+                      allowFullScreen
+                    ></iframe>
+                  </div>
+                </DialogContent>
+              </Dialog>
             </div>
           </div>
         </section>
