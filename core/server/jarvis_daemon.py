@@ -135,11 +135,36 @@ async def process_text_queue():
 
                 try:
                     payload = json.loads(payload_str)
+                    logging.info(f"Payload de notificación: {payload}")
                     if payload.get("notification_type") == "ToolPermission":
-                        prompt = "Señor, el protocolo requiere autorización para ejecutar un comando. Diga uno para permitir una vez, dos para la sesión, o tres para denegar."
+                        # Extraer mensaje de la notificación y detalles
+                        message = payload.get("message", "")
+                        details = payload.get("details", {})
+
+                        tool_type = details.get("type", "")
+
+                        if tool_type == "exec":
+                            cmd = details.get("command", "un comando desconocido")
+                            prompt = f"Señor, Gemini quiere ejecutar el comando: {cmd}. Diga uno para permitir, dos para siempre, o tres para denegar."
+                        elif tool_type == "edit":
+                            file_name = details.get("fileName", "un archivo")
+                            prompt = f"Señor, Gemini quiere editar el archivo: {file_name}. Diga uno para permitir, dos para siempre, o tres para denegar."
+                        elif tool_type == "mcp":
+                            tool = details.get(
+                                "toolDisplayName",
+                                details.get("toolName", "una herramienta"),
+                            )
+                            server = details.get("serverName", "un servidor")
+                            prompt = f"Señor, Gemini quiere usar la herramienta {tool} del servidor MCP {server}. Diga uno para permitir, dos para siempre, o tres para denegar."
+                        else:
+                            # Fallback si no sabemos el tipo
+                            title = details.get("title", "una acción")
+                            prompt = f"Señor, el protocolo requiere autorización para {title}. Diga uno para permitir, dos para siempre, o tres para denegar."
+
                         logging.info(
-                            "Notificación de herramienta detectada. Avisando al usuario."
+                            f"Notificación de herramienta detectada. Mensaje: {message} | Detalles: {details}. Avisando al usuario."
                         )
+
                         await asyncio.to_thread(tts.speak, prompt, interrupt_event)
                         awaiting_tool_permission.set()
                 except Exception as e:

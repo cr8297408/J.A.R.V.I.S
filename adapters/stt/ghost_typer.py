@@ -88,11 +88,11 @@ class GhostTyper:
             keystroke "v" using command down
             -- Darle tiempo a la terminal para procesar el texto (evita que el enter llegue antes que la UI actualice)
             delay 0.5
-            -- Usar explícitamente "keystroke return" en lugar de "key code 36" para mayor compatibilidad
-            keystroke return
+            -- Usar key code 36 (Enter) que es más robusto a nivel de sistema que keystroke return
+            key code 36
             -- En caso de bracketed paste mode, un segundo return puede ser necesario
             delay 0.5
-            keystroke return
+            key code 36
         end tell
         '''
 

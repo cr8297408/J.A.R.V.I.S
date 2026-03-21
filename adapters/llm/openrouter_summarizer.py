@@ -62,7 +62,7 @@ Debes responder ÚNICAMENTE con un objeto JSON válido con la siguiente estructu
                 response_format={"type": "json_object"},
                 temperature=0.3,
                 extra_headers={
-                    "HTTP-Referer": "https://github.com/vittorio-p/gemini-extension-spech",
+                    "HTTP-Referer": "https://github.com/cr8297408/J.A.R.V.I.S",
                     "X-Title": "JARVIS",
                 },
             )
