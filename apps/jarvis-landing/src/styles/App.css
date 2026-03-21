@@ -2,6 +2,15 @@
 @tailwind components;
 @tailwind utilities;
 
+html {
+  scroll-behavior: smooth;
+}
+
+/* Compensar el NavBar fijo al navegar por anclas */
+section[id] {
+  scroll-margin-top: 100px;
+}
+
 @layer base {
   :root {
     --background: 222.2 84% 4.9%;

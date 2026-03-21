@@ -54,7 +54,7 @@ const ProjectInfo: React.FC = () => {
     { category: 'Arquitectura', items: ['Puertos y Adaptadores', 'Asyncio', 'Daemon Server'] },
   ];
 
-  const fadeIn = {
+  const fadeIn: any = {
     hidden: { opacity: 0, y: 20 },
     visible: { 
       opacity: 1, 
@@ -63,7 +63,7 @@ const ProjectInfo: React.FC = () => {
     }
   };
 
-  const staggerContainer = {
+  const staggerContainer: any = {
     hidden: { opacity: 0 },
     visible: {
       opacity: 1,

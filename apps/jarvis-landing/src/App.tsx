@@ -13,7 +13,7 @@ import './styles/App.css';
 const App: React.FC = () => {
   const [demoOpen, setDemoOpen] = useState(false);
 
-  const containerVariants = {
+  const containerVariants: any = {
     hidden: { opacity: 0 },
     visible: {
       opacity: 1,
@@ -24,7 +24,7 @@ const App: React.FC = () => {
     }
   };
 
-  const itemVariants = {
+  const itemVariants: any = {
     hidden: { opacity: 0, y: 20 },
     visible: {
       opacity: 1,
