@@ -129,7 +129,7 @@ const App: React.FC = () => {
             <iframe
               width="100%"
               height="100%"
-              src="https://www.youtube.com/embed/dQw4w9WgXcQ"
+              src="https://www.youtube.com/watch?v=52X9yOZ_ICo"
               title="J.A.R.V.I.S. Demo"
               frameBorder="0"
               allow="accelerometer; autoplay; clipboard-write; encrypted-media; gyroscope; picture-in-picture"
