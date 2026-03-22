@@ -45,7 +45,8 @@ Debes responder ÚNICAMENTE con un objeto JSON válido con la siguiente estructu
 {
   "reasoning": "Tu análisis interno de por qué decides hablar o guardar silencio.",
   "should_speak": true o false,
-  "speech_content": "El texto exacto que dirás por TTS (vacío si should_speak es false)"
+  "speech_content": "El texto exacto que dirás por TTS (vacío si should_speak es false)",
+  "expects_response": true o false (siempre true si haces una pregunta o pides una decisión)
 }
 """
 
@@ -76,4 +77,62 @@ Debes responder ÚNICAMENTE con un objeto JSON válido con la siguiente estructu
                 "reasoning": f"Fallback por error: {str(e)}",
                 "should_speak": False,
                 "speech_content": "",
+                "expects_response": False,
+            }
+
+    async def evaluate_response(self, user_input: str, context: dict) -> dict:
+        """
+        Evalúa de forma inteligente la respuesta del usuario a una intervención de Jarvis.
+        """
+        last_speech = context.get("last_speech", "Ninguno")
+        last_terminal = context.get("last_terminal_output", "Ninguna")
+
+        prompt = f"""Eres la inteligencia central de JARVIS. Evalúa la respuesta del usuario a tu intervención anterior.
+Tu intervención anterior: "{last_speech}"
+Última salida de terminal: "{last_terminal}"
+El usuario acaba de responder: "{user_input}"
+
+Decide la acción más lógica:
+1. "authorize": El usuario aprueba la ejecución (ej: "sí", "dale", "ok"). 
+   - Retorna value: "1", "2" o "3" según corresponda.
+2. "answer": El usuario hace una pregunta o pide aclaración.
+   - Retorna value: (vacio, el flujo principal generará la respuesta).
+3. "type": El usuario da una nueva orden o comando directo.
+   - Retorna value: (el comando a ejecutar).
+4. "ignore": Ruido o entrada no accionable.
+
+Responde ÚNICAMENTE en JSON con el formato:
+{{
+  "action": "authorize|answer|type|ignore",
+  "value": "string",
+  "reasoning": "breve explicación"
+}}
+"""
+        try:
+            response = await self.client.chat.completions.create(
+                model=self.model,
+                messages=[
+                    {
+                        "role": "system",
+                        "content": "Eres J.A.R.V.I.S., un agente de IA. Clasifica la intención del usuario.",
+                    },
+                    {"role": "user", "content": prompt},
+                ],
+                response_format={"type": "json_object"},
+                temperature=0.2,
+                extra_headers={
+                    "HTTP-Referer": "https://github.com/cr8297408/J.A.R.V.I.S",
+                    "X-Title": "JARVIS",
+                },
+            )
+
+            content = response.choices[0].message.content or "{}"
+            return json.loads(content)
+
+        except Exception as e:
+            logging.error(f"Error evaluando respuesta (OpenRouter): {e}")
+            return {
+                "action": "answer",
+                "value": "",
+                "reasoning": f"Fallback por error: {str(e)}",
             }

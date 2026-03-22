@@ -38,7 +38,8 @@ Debes responder ÚNICAMENTE con un objeto JSON válido con la siguiente estructu
 {
   "reasoning": "Tu análisis interno de por qué decides hablar o guardar silencio.",
   "should_speak": true o false,
-  "speech_content": "El texto exacto que dirás por TTS (vacío si should_speak es false)"
+  "speech_content": "El texto exacto que dirás por TTS (vacío si should_speak es false)",
+  "expects_response": true o false (siempre true si haces una pregunta o pides una decisión)
 }
 """
 
@@ -65,31 +66,35 @@ Debes responder ÚNICAMENTE con un objeto JSON válido con la siguiente estructu
                 "reasoning": f"Fallback por error: {str(e)}",
                 "should_speak": False,
                 "speech_content": "",
+                "expects_response": False,
             }
 
-    async def evaluate_intent(self, user_input: str, context: dict) -> dict:
+    async def evaluate_response(self, user_input: str, context: dict) -> dict:
         """
-        Evalúa si la entrada del usuario debe ser inyectada en la terminal
-        o si puede ser respondida directamente basándose en el contexto reciente.
+        Evalúa de forma inteligente la respuesta del usuario a una intervención de Jarvis.
         """
         last_speech = context.get("last_speech", "Ninguno")
         last_terminal = context.get("last_terminal_output", "Ninguna")
 
-        prompt = f"""El usuario acaba de decirte: "{user_input}"
+        prompt = f"""Eres la inteligencia central de JARVIS. Evalúa la respuesta del usuario a tu intervención anterior.
+Tu intervención anterior: "{last_speech}"
+Última salida de terminal: "{last_terminal}"
+El usuario acaba de responder: "{user_input}"
 
-[CONTEXTO RECIENTE]
-Última salida de la terminal: {last_terminal}
-Lo último que tú le dijiste al usuario: {last_speech}
+Decide la acción más lógica:
+1. "authorize": El usuario aprueba la ejecución (ej: "sí", "dale", "ok"). 
+   - Retorna value: "1", "2" o "3" según corresponda.
+2. "answer": El usuario hace una pregunta o pide aclaración.
+   - Retorna value: (vacio, el flujo principal generará la respuesta).
+3. "type": El usuario da una nueva orden o comando directo.
+   - Retorna value: (el comando a ejecutar).
+4. "ignore": Ruido o entrada no accionable.
 
-Decide la siguiente acción:
-A) "speak_directly": El usuario te está haciendo una pregunta de seguimiento directo, pidiendo aclaración, o charlando sobre lo que le acabas de decir. Puedes responderle directamente basándote en el contexto reciente SIN necesidad de escribir nada en la terminal.
-B) "type_in_terminal": El usuario te está pidiendo que hagas algo nuevo, busques información nueva, o ejecutes un comando (ej. "profundiza en X" (si no está en el texto), "busca Y", "crea un archivo"). Debes pasarlo a la terminal.
-
-Responde ÚNICAMENTE con JSON válido:
+Responde ÚNICAMENTE en JSON con el formato:
 {{
-  "action": "speak_directly" o "type_in_terminal",
-  "reasoning": "Tu razonamiento corto",
-  "direct_response": "Tu respuesta hablada (solo si action es speak_directly, si no vacío)"
+  "action": "authorize|answer|type|ignore",
+  "value": "string",
+  "reasoning": "breve explicación"
 }}
 """
         try:
@@ -98,7 +103,7 @@ Responde ÚNICAMENTE con JSON válido:
                 messages=[
                     {
                         "role": "system",
-                        "content": "Eres J.A.R.V.I.S., un agente de IA. Debes clasificar la intención del usuario.",
+                        "content": "Eres J.A.R.V.I.S., un agente de IA. Clasifica la intención del usuario.",
                     },
                     {"role": "user", "content": prompt},
                 ],
@@ -110,32 +115,9 @@ Responde ÚNICAMENTE con JSON válido:
             return json.loads(content)
 
         except Exception as e:
-            logging.error(f"Error evaluando intención (Groq): {e}")
+            logging.error(f"Error evaluando respuesta (Groq): {e}")
             return {
-                "action": "type_in_terminal",
+                "action": "answer",
+                "value": "",
                 "reasoning": f"Fallback por error: {str(e)}",
-                "direct_response": "",
-            }
-        prompt = f"[ÚLTIMO COMANDO DEL USUARIO]:\n{user_command}\n\n[SALIDA CRUDA DE LA TERMINAL A EVALUAR]:\n{raw_text}\n\nAnaliza esta salida y responde ÚNICAMENTE con JSON válido."
-
-        try:
-            response = await self.client.chat.completions.create(
-                model=self.model,
-                messages=[
-                    {"role": "system", "content": self.system_prompt},
-                    {"role": "user", "content": prompt},
-                ],
-                response_format={"type": "json_object"},
-                temperature=0.3,
-            )
-
-            content = response.choices[0].message.content
-            return json.loads(content)
-
-        except Exception as e:
-            logging.error(f"Error en Jarvis Brain (Groq): {e}")
-            return {
-                "reasoning": f"Fallback por error: {str(e)}",
-                "should_speak": False,
-                "speech_content": "",
             }

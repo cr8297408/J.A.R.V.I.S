@@ -39,9 +39,64 @@ Debes responder ÚNICAMENTE con un objeto JSON válido con la siguiente estructu
 {
   "reasoning": "Tu análisis interno de por qué decides hablar o guardar silencio (simulación predictiva).",
   "should_speak": true o false,
-  "speech_content": "El texto exacto que dirás por TTS (vacío si should_speak es false)"
+  "speech_content": "El texto exacto que dirás por TTS (vacío si should_speak es false)",
+  "expects_response": true o false (siempre true si haces una pregunta o pides una decisión)
 }
 """
+
+    async def evaluate_response(self, user_input: str, context: dict) -> dict:
+        """
+        Evalúa de forma inteligente la respuesta del usuario a una intervención de Jarvis.
+        Contexto: last_speech (lo que dijo Jarvis), user_input (lo que dijo el usuario).
+        """
+        last_speech = context.get("last_speech", "")
+        
+        prompt = f"""
+Eres la inteligencia central de JARVIS. Tu trabajo es evaluar la respuesta del usuario a tu intervención anterior.
+Tu intervención anterior fue: "{last_speech}"
+El usuario acaba de responder: "{user_input}"
+
+Debes decidir la acción más lógica basándote en este intercambio:
+
+1. SI el usuario está APROBANDO una ejecución (ej: "sí", "dale", "procede", "adelante", "ok", "hazlo"):
+   - action: "authorize"
+   - value: "1" (o el número correspondiente si había opciones)
+   - reasoning: "El usuario aprueba la ejecución."
+
+2. SI el usuario te está haciendo una pregunta de seguimiento o pidiendo una explicación:
+   - action: "answer"
+   - value: "" (deja vacío, el flujo principal generará la respuesta)
+   - reasoning: "El usuario tiene una duda o pide más info."
+
+3. SI el usuario está dando una nueva orden o comando:
+   - action: "type"
+   - value: (el comando a ejecutar, ej: "git status")
+   - reasoning: "El usuario cambió de tema o dio una orden directa."
+
+4. SI es ruido o no tiene sentido:
+   - action: "ignore"
+   - value: ""
+   - reasoning: "Entrada no accionable."
+
+Responde ÚNICAMENTE en JSON con el formato:
+{{
+  "action": "authorize|answer|type|ignore",
+  "value": "string",
+  "reasoning": "breve explicación"
+}}
+"""
+        try:
+            response = await self.model.generate_content_async(
+                prompt,
+                generation_config=genai.GenerationConfig(
+                    response_mime_type="application/json"
+                ),
+            )
+            text = response.text.strip()
+            return json.loads(text)
+        except Exception as e:
+            logging.error(f"Error evaluando respuesta con Gemini: {e}")
+            return {"action": "answer", "value": "", "reasoning": f"Fallback por error: {e}"}
 
     async def summarize(self, raw_text: str, user_command: str = "") -> dict:
         prompt = f"{self.system_prompt}\n\n[ÚLTIMO COMANDO DEL USUARIO]:\n{user_command}\n\n[SALIDA CRUDA DE LA TERMINAL A EVALUAR]:\n{raw_text}\n\n[TU RESPUESTA EN JSON]:"
@@ -60,4 +115,5 @@ Debes responder ÚNICAMENTE con un objeto JSON válido con la siguiente estructu
                 "reasoning": f"Fallback por error: {str(e)}",
                 "should_speak": False,
                 "speech_content": "",
+                "expects_response": False,
             }

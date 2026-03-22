@@ -23,7 +23,8 @@ sys.path.insert(0, project_root)
 from core.lexer.poc_lexer import StreamingLexer
 from core.audio.vad_listener import (
     start_vad_thread,
-    awaiting_tool_permission,
+    active_listening_requested,
+    jarvis_speaking,
     user_context,
 )
 from adapters.tts.edge_tts_adapter import EdgeTTS
@@ -87,7 +88,16 @@ async def evaluar_y_hablar(texto_acumulado: str):
             user_context["last_speech"] = speech
             user_context["last_terminal_output"] = texto_acumulado
             logging.info(f"[Cerebro JARVIS] Decidió hablar: {speech}")
-            await asyncio.to_thread(tts.speak, speech, interrupt_event)
+            
+            # Activamos la escucha PREVIO a hablar para permitir Barge-in siempre
+            active_listening_requested.set()
+            jarvis_speaking.set()
+
+            # Hablar (bloqueante en el hilo de TTS)
+            try:
+                await asyncio.to_thread(tts.speak, speech, interrupt_event)
+            finally:
+                jarvis_speaking.clear()
         else:
             logging.info(
                 "[Cerebro JARVIS] Decidió mantener silencio (Filtrando ruido cognitivo)."
@@ -165,8 +175,12 @@ async def process_text_queue():
                             f"Notificación de herramienta detectada. Mensaje: {message} | Detalles: {details}. Avisando al usuario."
                         )
 
-                        await asyncio.to_thread(tts.speak, prompt, interrupt_event)
-                        awaiting_tool_permission.set()
+                        active_listening_requested.set()
+                        jarvis_speaking.set()
+                        try:
+                            await asyncio.to_thread(tts.speak, prompt, interrupt_event)
+                        finally:
+                            jarvis_speaking.clear()
                 except Exception as e:
                     logging.error(f"Error parseando notificación: {e}")
 
