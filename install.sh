@@ -41,23 +41,23 @@ if [ "$OS" = "Darwin" ]; then
         echo -e "${GREEN}-> Homebrew ya está instalado.${NC}"
     fi
 
-    echo -e "${YELLOW}Instalando dependencias del sistema (portaudio)...${NC}"
-    brew install portaudio
+    echo -e "${YELLOW}Instalando dependencias del sistema (portaudio, ffmpeg)...${NC}"
+    brew install portaudio ffmpeg
 
 elif [ "$OS" = "Linux" ]; then
     echo -e "${GREEN}-> Linux detectado.${NC}"
     
     # Detectar el gestor de paquetes
     if command -v apt-get &> /dev/null; then
-        echo -e "${YELLOW}Instalando dependencias del sistema (portaudio19-dev, python3-venv)...${NC}"
+        echo -e "${YELLOW}Instalando dependencias del sistema (portaudio19-dev, ffmpeg, python3-venv)...${NC}"
         sudo apt-get update
-        sudo apt-get install -y portaudio19-dev python3-venv python3-dev
+        sudo apt-get install -y portaudio19-dev ffmpeg python3-venv python3-dev
     elif command -v pacman &> /dev/null; then
-        echo -e "${YELLOW}Instalando dependencias del sistema (portaudio)...${NC}"
-        sudo pacman -Sy --noconfirm portaudio python-virtualenv
+        echo -e "${YELLOW}Instalando dependencias del sistema (portaudio, ffmpeg)...${NC}"
+        sudo pacman -Sy --noconfirm portaudio ffmpeg python-virtualenv
     elif command -v dnf &> /dev/null; then
-        echo -e "${YELLOW}Instalando dependencias del sistema (portaudio-devel)...${NC}"
-        sudo dnf install -y portaudio-devel python3-virtualenv
+        echo -e "${YELLOW}Instalando dependencias del sistema (portaudio-devel, ffmpeg)...${NC}"
+        sudo dnf install -y portaudio-devel ffmpeg python3-virtualenv
     else
         echo -e "${RED}Gestor de paquetes no soportado automáticamente. Por favor instala 'portaudio' manualmente.${NC}"
         exit 1

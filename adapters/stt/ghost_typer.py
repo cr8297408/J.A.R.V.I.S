@@ -37,6 +37,13 @@ class GhostTyper:
                 do script "cd '{cwd}' && clear && gemini; exit"
             end if
         end tell
+        
+        -- Esperar a que la CLI inicialice y muestre el prompt de Trust Folder (o cargue normal)
+        delay 2.5
+        tell application "System Events"
+            -- Simular Enter (acepta la opción 1. Trust folder por defecto)
+            key code 36
+        end tell
         '''
         try:
             subprocess.run(
