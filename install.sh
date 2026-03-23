@@ -13,6 +13,9 @@ echo -e "${BLUE}======================================================${NC}"
 echo -e "${BLUE}  J.A.R.V.I.S. (Gemini Speech Extension) Installer  ${NC}"
 echo -e "${BLUE}======================================================${NC}\n"
 
+# Registrar uso de disco inicial
+START_DISK=$(df -k ~ | awk 'NR==2 {print $3}')
+
 # 1. Detectar el Sistema Operativo
 OS="$(uname -s)"
 echo -e "${YELLOW}[1/5] Detectando Sistema Operativo...${NC}"
@@ -23,6 +26,17 @@ if [ "$OS" = "Darwin" ]; then
     if ! command -v brew &> /dev/null; then
         echo -e "${RED}Homebrew no está instalado. Instalándolo ahora...${NC}"
         /bin/bash -c "$(curl -fsSL https://raw.githubusercontent.com/Homebrew/install/HEAD/install.sh)"
+        
+        # Configurar brew en el entorno actual y perfil de zsh
+        if [ -x "/opt/homebrew/bin/brew" ]; then
+            echo >> "$HOME/.zprofile"
+            echo 'eval "$(/opt/homebrew/bin/brew shellenv zsh)"' >> "$HOME/.zprofile"
+            eval "$(/opt/homebrew/bin/brew shellenv zsh)"
+        elif [ -x "/usr/local/bin/brew" ]; then
+            echo >> "$HOME/.zprofile"
+            echo 'eval "$(/usr/local/bin/brew shellenv zsh)"' >> "$HOME/.zprofile"
+            eval "$(/usr/local/bin/brew shellenv zsh)"
+        fi
     else
         echo -e "${GREEN}-> Homebrew ya está instalado.${NC}"
     fi
@@ -53,24 +67,21 @@ else
     exit 1
 fi
 
-# 2. Comprobar Node.js y npm (para gemini-cli)
-echo -e "\n${YELLOW}[2/5] Comprobando Node.js...${NC}"
-if ! command -v npm &> /dev/null; then
-    echo -e "${RED}npm no está instalado. J.A.R.V.I.S. requiere Node.js para el gemini-cli.${NC}"
-    echo -e "Por favor instala Node.js (https://nodejs.org) y vuelve a ejecutar este script."
-    exit 1
-else
-    echo -e "${GREEN}-> Node.js y npm detectados.${NC}"
-fi
-
-# 3. Instalar Gemini CLI globalmente si no está
-echo -e "\n${YELLOW}[3/5] Instalando @google/generative-ai-cli...${NC}"
+# 2. Comprobar e Instalar Gemini CLI
+echo -e "\n${YELLOW}[2/5 y 3/5] Instalando Gemini CLI...${NC}"
 if ! command -v gemini &> /dev/null; then
-    npm install -g @google/generative-ai-cli
-    echo -e "${GREEN}-> gemini-cli instalado globalmente.${NC}"
+    if [ "$OS" = "Darwin" ]; then
+        brew install gemini-cli
+    else
+        echo -e "${YELLOW}En Linux, por favor instala gemini CLI según tu distribución (o usa linuxbrew/npm).${NC}"
+        # Fallback a npm si Node.js está instalado en Linux
+        if command -v npm &> /dev/null; then
+            npm install -g @google/gemini-cli || echo -e "${RED}Falló la instalación por npm. Instálalo manualmente.${NC}"
+        fi
+    fi
+    echo -e "${GREEN}-> gemini-cli instalado.${NC}"
 else
     echo -e "${GREEN}-> gemini-cli ya está instalado.${NC}"
-    # Opcional: npm update -g @google/generative-ai-cli
 fi
 
 # 4. Configurar Entorno Virtual de Python
@@ -80,11 +91,19 @@ if ! command -v python3 &> /dev/null; then
     exit 1
 fi
 
+if [ -d ".venv" ]; then
+    # Verificar si el entorno virtual está roto (ej. actualización de Python)
+    if ! .venv/bin/python3 -c "import sys" &> /dev/null; then
+        echo -e "${YELLOW}El entorno virtual '.venv' parece estar corrupto. Recreándolo...${NC}"
+        rm -rf .venv
+    else
+        echo -e "${GREEN}-> Entorno virtual '.venv' ya existe y es válido.${NC}"
+    fi
+fi
+
 if [ ! -d ".venv" ]; then
     python3 -m venv .venv
     echo -e "${GREEN}-> Entorno virtual '.venv' creado.${NC}"
-else
-    echo -e "${GREEN}-> Entorno virtual '.venv' ya existe.${NC}"
 fi
 
 # 5. Instalar Dependencias de Python
@@ -101,6 +120,11 @@ fi
 
 pip install -r requirements.txt
 echo -e "${GREEN}-> Dependencias de Python instaladas correctamente.${NC}"
+
+# Descargar modelos de IA necesarios
+echo -e "\n${YELLOW}Descargando modelos (Wake Word, etc.)...${NC}"
+python3 download_models.py
+echo -e "${GREEN}-> Modelos listos.${NC}"
 
 # Configurar archivo .env
 echo -e "\n${YELLOW}Configurando archivo .env...${NC}"
@@ -134,4 +158,15 @@ echo -e "\n${YELLOW}Próximos pasos:${NC}"
 echo -e "1. Abre el archivo ${BLUE}.env${NC} y añade tus API Keys (GROQ_API_KEY, OPENROUTER_API_KEY, etc)."
 echo -e "2. Asegúrate de tener los hooks de Gemini CLI configurados para apuntar a 'hooks/notification.py'."
 echo -e "3. Ya puedes iniciar J.A.R.V.I.S. desde CUALQUIER carpeta escribiendo: ${BLUE}jarvis${NC}"
+
+# Calcular espacio ocupado
+END_DISK=$(df -k ~ | awk 'NR==2 {print $3}')
+if [ -n "$START_DISK" ] && [ -n "$END_DISK" ]; then
+    DIFF_KB=$((END_DISK - START_DISK))
+    if [ "$DIFF_KB" -gt 0 ]; then
+        DIFF_MB=$((DIFF_KB / 1024))
+        echo -e "\n${GREEN}* Espacio en disco ocupado por las instalaciones: ~${DIFF_MB} MB${NC}"
+    fi
+fi
+
 echo -e "======================================================\n"

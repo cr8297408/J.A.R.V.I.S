@@ -10,6 +10,9 @@ while [ -h "$SOURCE" ]; do
 done
 DIR="$( cd -P "$( dirname "$SOURCE" )" >/dev/null 2>&1 && pwd )"
 
+# Guardar la ruta original para que el daemon la utilice
+export JARVIS_INVOCATION_DIR="$PWD"
+
 # Ir al directorio del proyecto sin importar desde dónde se llamó el comando
 cd "$DIR"
 

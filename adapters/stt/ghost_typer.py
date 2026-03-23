@@ -18,8 +18,8 @@ class GhostTyper:
         """
         logging.info(f"Abriendo una nueva ventana de {target_app} con gemini cli...")
 
-        # Obtener la ruta actual donde se está ejecutando el daemon
-        cwd = os.getcwd()
+        # Obtener la ruta original desde donde el usuario invocó el comando 'jarvis'
+        cwd = os.getenv("JARVIS_INVOCATION_DIR", os.getcwd())
 
         # Usar AppleScript para abrir una sola ventana en la ruta correcta.
         # Agregamos "exit" al final para que la ventana pueda cerrarse si el proceso muere.

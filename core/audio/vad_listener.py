@@ -79,6 +79,7 @@ def start_vad_thread(
             frames_buffer = []  # Para acumular hasta los 1280 que necesita OWW
             recording_frames = []  # Para guardar el comando entero
             silence_chunks = 0
+            speaking_duration_chunks = 0  # Contador para evitar echo inicial
             MAX_SILENCE_CHUNKS = 50  # ~1.5 segundos de silencio a 30ms por chunk
             MAX_RECORDING_CHUNKS = (
                 500  # ~15 segundos máximo absoluto (500 * 30ms = 15s)
@@ -98,6 +99,7 @@ def start_vad_thread(
                         state = "RECORDING_COMMAND"
                         recording_frames = []
                         silence_chunks = 0
+                        speaking_duration_chunks = 0
                         frames_buffer = []
                         continue
 
@@ -132,6 +134,7 @@ def start_vad_thread(
                                 state = "RECORDING_COMMAND"
                                 recording_frames = []
                                 silence_chunks = 0
+                                speaking_duration_chunks = 0
                                 break  # Salir del for loop
 
                         frames_buffer = []  # Limpiar buffer corto
@@ -158,10 +161,16 @@ def start_vad_thread(
 
                         # Barge-in (Interrupción): Si Jarvis está hablando y detectamos voz humana fuerte,
                         # lo cortamos al instante.
-                        if jarvis_speaking.is_set() and is_speech and rms > 800:
-                            if not interrupt_event.is_set():
-                                logging.info("Barge-in detectado: Silenciando a Jarvis.")
-                                interrupt_event.set()
+                        if jarvis_speaking.is_set():
+                            speaking_duration_chunks += 1
+                            # Solo interrumpir después de ~750ms de habla para evitar echo inicial
+                            # y con un umbral de volumen mucho más alto (1500 RMS)
+                            if is_speech and rms > 1500 and speaking_duration_chunks > 25:
+                                if not interrupt_event.is_set():
+                                    logging.info("Barge-in detectado: Silenciando a Jarvis.")
+                                    interrupt_event.set()
+                        else:
+                            speaking_duration_chunks = 0
 
                     # Si detectó ~1.5s de silencio o pasamos el límite absoluto de tiempo
                     if (
@@ -198,6 +207,13 @@ def start_vad_thread(
                                 return
 
                             logging.info(f"Voz detectada: {text}")
+                            
+                            # Filtro de alucinaciones comunes de Whisper en silencio/ruido
+                            t_clean = text.lower().strip().replace("!", "").replace("¡", "").replace(".", "")
+                            if t_clean in ["suscribete", "subscribete", "gracias por ver", "gracias", "watching"]:
+                                logging.info(f"Hallucination filtrada: {text}")
+                                return
+
                             user_context["last_command"] = text
 
                             # Evaluación inteligente si hay un summarizer

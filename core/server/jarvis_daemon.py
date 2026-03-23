@@ -62,7 +62,7 @@ lexer = StreamingLexer()
 tts = EdgeTTS()
 
 # Cola asíncrona para procesar los chunks que llegan por el socket en orden
-text_queue = asyncio.Queue()
+text_queue = None
 
 
 async def evaluar_y_hablar(texto_acumulado: str):
@@ -236,6 +236,10 @@ async def handle_client(reader: asyncio.StreamReader, writer: asyncio.StreamWrit
 
 async def start_server():
     """Inicia el servidor TCP local."""
+    global text_queue
+    if text_queue is None:
+        text_queue = asyncio.Queue()
+
     server = await asyncio.start_server(handle_client, "127.0.0.1", 49999)
 
     addrs = ", ".join(str(sock.getsockname()) for sock in server.sockets)
