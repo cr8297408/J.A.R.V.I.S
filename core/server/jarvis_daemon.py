@@ -175,6 +175,10 @@ async def process_text_queue():
                             f"Notificación de herramienta detectada. Mensaje: {message} | Detalles: {details}. Avisando al usuario."
                         )
 
+                        # Limpiar el evento de interrupción ANTES de hablar, de lo contrario abortará instantáneamente
+                        if interrupt_event.is_set():
+                            interrupt_event.clear()
+
                         active_listening_requested.set()
                         jarvis_speaking.set()
                         try:

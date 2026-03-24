@@ -11,7 +11,7 @@ def main():
     try:
         raw_input = sys.stdin.read()
         if not raw_input:
-            print(json.dumps({"decision": "allow"}))
+            print(json.dumps({"decision": "none"}))
             return 0
 
         payload = json.loads(raw_input)
@@ -35,7 +35,10 @@ def main():
     except Exception as e:
         print(f"[JARVIS NOTIFICATION HOOK] Error parsing: {e}", file=sys.stderr)
 
-    print(json.dumps({"decision": "allow"}))
+    # Devolvemos "none" (o simplemente salimos sin enviar una decision de JSON dictando el permiso)
+    # Esto le indica a Gemini CLI que use su terminal interactiva (std/out) y avise al usuario por ahí,
+    # permitiendo que Ghost Typer typee el 1, 2, o 3 después de escuchar al usuario.
+    print(json.dumps({"decision": "none"}))
     return 0
 
 

@@ -21,6 +21,17 @@ class GhostTyper:
         # Obtener la ruta original desde donde el usuario invocó el comando 'jarvis'
         cwd = os.getenv("JARVIS_INVOCATION_DIR", os.getcwd())
 
+        # Escapamos la ruta
+        safe_cwd = cwd.replace("'", "'\\''")
+        
+        # Verificar si tmux está instalado
+        has_tmux = subprocess.run(["which", "tmux"], capture_output=True).returncode == 0
+        if has_tmux:
+            # Usar tmux new-session
+            final_cmd = f"tmux new-session -A -s jarvis_gemini \\\"cd '{safe_cwd}' && clear && gemini; exit\\\""
+        else:
+            final_cmd = f"cd '{safe_cwd}' && clear && gemini; exit"
+
         # Usar AppleScript para abrir una sola ventana en la ruta correcta.
         # Agregamos "exit" al final para que la ventana pueda cerrarse si el proceso muere.
         script = f'''
@@ -32,9 +43,9 @@ class GhostTyper:
             -- Si la ventana activa está libre (ej. recién iniciada la app), la usamos.
             -- Si está ocupada (ej. corriendo el daemon o cualquier otra cosa), abrimos otra.
             if not busy of window 1 then
-                do script "cd '{cwd}' && clear && gemini; exit" in window 1
+                do script "{final_cmd}" in window 1
             else
-                do script "cd '{cwd}' && clear && gemini; exit"
+                do script "{final_cmd}"
             end if
         end tell
         
@@ -69,11 +80,16 @@ class GhostTyper:
 
         logging.info(f"GhostTyper inyectando en {target_app}: '{text}'")
 
-        # Enviar comando para abrir gemini si se nos pide
-        # O detectar si queremos abrir una ventana dedicada, pero por ahora abrimos la terminal
-        # y si no hay ventana, el script de arriba crea una.
+        has_tmux_session = subprocess.run(["tmux", "has-session", "-t", "jarvis_gemini"], capture_output=True).returncode == 0
+        if has_tmux_session:
+            logging.info("Inyectando texto via tmux en background...")
+            # Usar tmux send-keys con el flag -l para insertar el texto literal, asegurando que no se interpreten caracteres especiales
+            subprocess.run(["tmux", "send-keys", "-t", "jarvis_gemini", "-l", text], check=False)
+            # Enviar el Enter key
+            subprocess.run(["tmux", "send-keys", "-t", "jarvis_gemini", "Enter"], check=False)
+            return
 
-        # 1. Guardar el texto en el portapapeles de Mac (es mucho más confiable que simular teclas de a una)
+        # 1. Fallback a AppleScript: Guardar el texto en el portapapeles de Mac (es mucho más confiable que simular teclas de a una)
         # Escapamos comillas simples para bash
         safe_text = text.replace("'", "'\"'\"'")
         # Nota: quitamos el \n del final en el portapapeles para evitar que herramientas como prompt-toolkit

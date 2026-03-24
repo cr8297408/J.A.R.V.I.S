@@ -82,7 +82,7 @@ def start_vad_thread(
             speaking_duration_chunks = 0  # Contador para evitar echo inicial
             MAX_SILENCE_CHUNKS = 50  # ~1.5 segundos de silencio a 30ms por chunk
             MAX_RECORDING_CHUNKS = (
-                500  # ~15 segundos máximo absoluto (500 * 30ms = 15s)
+                2000  # ~15 segundos máximo absoluto (500 * 30ms = 15s)
             )
             MIN_RMS_THRESHOLD = (
                 450  # Umbral de volumen para ignorar ruido de fondo bajo
