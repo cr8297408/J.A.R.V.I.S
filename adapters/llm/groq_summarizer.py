@@ -121,3 +121,38 @@ Responde ÚNICAMENTE en JSON con el formato:
                 "value": "",
                 "reasoning": f"Fallback por error: {str(e)}",
             }
+
+    async def summarize_permission(self, details: dict) -> str:
+        """
+        Resume una solicitud de permiso de herramienta y evalúa riesgos.
+        """
+        prompt = f"""Analiza esta solicitud de permiso de Gemini CLI y genera un resumen natural para el usuario.
+Detalles de la solicitud: {json.dumps(details)}
+
+INSTRUCCIONES:
+1. Identifica qué quiere hacer Gémini (ej: borrar, editar, ver archivos, buscar en internet).
+2. Resume el propósito en una frase corta y amena.
+3. **MENCIONA LA CARPETA/FOLDER**: Si la solicitud indica un directorio de trabajo (cwd), una ruta de archivo o el contexto permite deducir dónde se realizará la acción, menciónalo claramente (ej: "en la carpeta actual", "en el directorio src", "dentro de tu proyecto de eliox").
+4. EVALUACIÓN DE RIESGO: Si la acción es potencialmente peligrosa (borrar archivos, instalar paquetes, modificar configuración crítica), menciónalo explícitamente y con precaución.
+5. Dirígete al usuario como "Señor".
+6. Termina SIEMPRE con una pregunta sobre si debe proceder, o pide que diga uno para permitir, dos para siempre o tres para denegar si es una autorización formal.
+   Ejemplo: "Señor, Gemini quiere borrar el archivo temporal en la carpeta logs. Es una acción destructiva, ¿procedemos? Diga uno para permitir, dos para siempre o tres para denegar."
+
+Responde ÚNICAMENTE con el texto que Jarvis debe decir por voz. Sin JSON, sin etiquetas.
+"""
+        try:
+            response = await self.client.chat.completions.create(
+                model=self.model,
+                messages=[
+                    {
+                        "role": "system",
+                        "content": "Eres J.A.R.V.I.S., el asistente personal. Resume permisos y evalúa riesgos.",
+                    },
+                    {"role": "user", "content": prompt},
+                ],
+                temperature=0.4,
+            )
+            return response.choices[0].message.content.strip()
+        except Exception as e:
+            logging.error(f"Error resumiendo permiso (Groq): {e}")
+            return "Señor, el sistema requiere su autorización para una acción de Gemini. Diga uno para permitir, dos para siempre o tres para denegar."

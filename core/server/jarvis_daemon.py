@@ -148,32 +148,17 @@ async def process_text_queue():
                     logging.info(f"Payload de notificación: {payload}")
                     if payload.get("notification_type") == "ToolPermission":
                         # Extraer mensaje de la notificación y detalles
-                        message = payload.get("message", "")
                         details = payload.get("details", {})
-
-                        tool_type = details.get("type", "")
-
-                        if tool_type == "exec":
-                            cmd = details.get("command", "un comando desconocido")
-                            prompt = f"Señor, Gemini quiere ejecutar el comando: {cmd}. Diga uno para permitir, dos para siempre, o tres para denegar."
-                        elif tool_type == "edit":
-                            file_name = details.get("fileName", "un archivo")
-                            prompt = f"Señor, Gemini quiere editar el archivo: {file_name}. Diga uno para permitir, dos para siempre, o tres para denegar."
-                        elif tool_type == "mcp":
-                            tool = details.get(
-                                "toolDisplayName",
-                                details.get("toolName", "una herramienta"),
-                            )
-                            server = details.get("serverName", "un servidor")
-                            prompt = f"Señor, Gemini quiere usar la herramienta {tool} del servidor MCP {server}. Diga uno para permitir, dos para siempre, o tres para denegar."
-                        else:
-                            # Fallback si no sabemos el tipo
-                            title = details.get("title", "una acción")
-                            prompt = f"Señor, el protocolo requiere autorización para {title}. Diga uno para permitir, dos para siempre, o tres para denegar."
+                        
+                        # Inyectar el directorio actual de invocación para que la IA sepa dónde está "parada"
+                        details["cwd_context"] = os.getenv("JARVIS_INVOCATION_DIR", os.getcwd())
 
                         logging.info(
-                            f"Notificación de herramienta detectada. Mensaje: {message} | Detalles: {details}. Avisando al usuario."
+                            f"Notificación de herramienta detectada. Detalles: {details}. Solicitando resumen a IA..."
                         )
+
+                        # Usar el cerebro (LLM) para resumir el permiso y evaluar riesgos
+                        prompt = await summarizer.summarize_permission(details)
 
                         # Limpiar el evento de interrupción ANTES de hablar, de lo contrario abortará instantáneamente
                         if interrupt_event.is_set():
