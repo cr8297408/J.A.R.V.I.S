@@ -5,11 +5,16 @@
 
 </div>
 
-# J.A.R.V.I.S. — Extensión de Voz para Gemini CLI
+# J.A.R.V.I.S. — Programación Accesible por Voz para Personas con Discapacidad Visual
 
 > *Just A Rather Very Intelligent System*
 
-**J.A.R.V.I.S.** es una capa inteligente y de voz sobre el [Gemini CLI](https://github.com/google-gemini/gemini-cli). Intercepta la salida de texto de Gemini, la resume de forma inteligente (especialmente los bloques de código) y te permite interactuar con tu co-piloto de IA completamente **manos libres** mediante comandos de voz.
+**J.A.R.V.I.S.** es, ante todo, una solución de **accesibilidad radical**. Está diseñado para romper las barreras que enfrentan los programadores con **discapacidad visual** al interactuar con terminales y copilotos de IA. 
+
+A diferencia de un lector de pantalla tradicional que lee "paredes de código" de forma secuencial y tediosa, J.A.R.V.I.S. actúa como un **cerebro auditivo intermedio**: intercepta la salida del [Gemini CLI](https://github.com/google-gemini/gemini-cli), la resume de forma inteligente (omitiendo la sintaxis irrelevante y enfocándose en la lógica) y permite una interacción 100% manos libres mediante voz.
+
+> [!IMPORTANT]
+> **Misión Principal:** Devolver la autonomía a los desarrolladores con discapacidad visual, permitiéndoles programar, depurar y navegar por entornos complejos mediante una conversación natural y fluida con la IA.
 
 En lugar de leer paredes de código en voz alta, J.A.R.V.I.S. dice cosas como:
 > *"He generado el script de Python usando pandas tal como pediste. ¿Lo ejecuto o lo guardo en un archivo?"*
@@ -20,6 +25,7 @@ En lugar de leer paredes de código en voz alta, J.A.R.V.I.S. dice cosas como:
 
 | Característica | Descripción |
 |---|---|
+| ♿ **Accesibilidad** | Una herramienta de inclusión que permite a personas con **discapacidad visual** programar e interactuar con la IA de forma autónoma. |
 | 🧠 **Resumen Inteligente** | Los bloques de código nunca se leen textualmente. Pasan por un filtro de resumen con Gemini Flash antes de llegar a tus oídos. |
 | 🎙️ **Motor STT Híbrido** | Cambia entre STT local (MLX Whisper en Apple Silicon) y remoto (API de OpenAI Whisper). |
 | 🔊 **Motor TTS Híbrido** | Elige entre `mac say` (latencia cero), ElevenLabs (calidad cinematográfica) o Edge TTS (nube, gratis). |

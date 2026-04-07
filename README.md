@@ -5,11 +5,16 @@
 
 </div>
 
-# J.A.R.V.I.S. — Gemini Voice CLI Extension
+# J.A.R.V.I.S. — Accessible Voice Programming for the Visually Impaired
 
 > *Just A Rather Very Intelligent System*
 
-**J.A.R.V.I.S.** is a voice-first intelligent layer on top of the [Gemini CLI](https://github.com/google-gemini/gemini-cli). It intercepts the raw text output from Gemini, intelligently summarizes it (especially code blocks), and lets you interact with your AI co-pilot completely **hands-free** via voice commands.
+**J.A.R.V.I.S.** is, above all, a **radical accessibility solution**. It is built to break down the barriers faced by **visually impaired** developers when interacting with terminals and AI co-pilots.
+
+Unlike traditional screen readers that read "walls of code" sequentially and tediously, J.A.R.V.I.S. acts as an **auditory cognitive bridge**: it intercepts output from the [Gemini CLI](https://github.com/google-gemini/gemini-cli), intelligently summarizes it (stripping out noise and focusing on intent), and enables a 100% hands-free interaction via voice.
+
+> [!IMPORTANT]
+> **Core Mission:** Returning autonomy to developers with visual disabilities, allowing them to program, debug, and navigate complex environments through natural, fluid conversation with AI.
 
 Instead of reading walls of code aloud, J.A.R.V.I.S. says things like:
 > *"I've generated the Python script using pandas as requested. Should I execute it or save it to a file?"*
@@ -20,6 +25,7 @@ Instead of reading walls of code aloud, J.A.R.V.I.S. says things like:
 
 | Feature | Description |
 |---|---|
+| ♿ **Accessibility** | An inclusion tool that enables **visually impaired** individuals to program and interact with AI autonomously. |
 | 🧠 **Intelligent Summarization** | Code blocks are never read verbatim. They pass through a Gemini Flash summarization filter before reaching your ears. |
 | 🎙️ **Hybrid STT Engine** | Switch between local (MLX Whisper on Apple Silicon) and remote (OpenAI Whisper API) speech-to-text. |
 | 🔊 **Hybrid TTS Engine** | Choose between `mac say` (zero latency), ElevenLabs (cinematic quality), or Edge TTS (cloud, free). |
