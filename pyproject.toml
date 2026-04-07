@@ -27,4 +27,4 @@ jarvis = "jarvis.cli:main"
 
 [tool.setuptools.packages.find]
 where = ["."]
-include = ["jarvis*"]
+include = ["jarvis*", "core*", "adapters*"]
