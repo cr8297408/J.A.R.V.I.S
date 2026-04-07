@@ -188,13 +188,28 @@ def _start_pty() -> None:
 
 
 def _start_daemon() -> None:
-    """Inicia el modo Daemon (servidor TCP + hooks)."""
-    try:
-        from core.server import jarvis_daemon
-        jarvis_daemon.main()
-    except ImportError as e:
-        _fail(f"No se pudo cargar el daemon: {e}")
-        sys.exit(1)
+    """
+    Inicia el modo de operación según el backend seleccionado.
+    - claude  → JarvisAPISession (streaming directo, sin PTY)
+    - gemini / groq → daemon TCP con hooks del CLI
+    """
+    backend = os.getenv("ACTIVE_BRAIN_ENGINE", "gemini").lower()
+
+    if backend == "claude":
+        try:
+            from core.session.jarvis_api_session import JarvisAPISession
+            session = JarvisAPISession()
+            session.run()
+        except ImportError as e:
+            _fail(f"No se pudo cargar la sesión Claude API: {e}")
+            sys.exit(1)
+    else:
+        try:
+            from core.server import jarvis_daemon
+            jarvis_daemon.main()
+        except ImportError as e:
+            _fail(f"No se pudo cargar el daemon: {e}")
+            sys.exit(1)
 
 
 # ─── jarvis doctor ────────────────────────────────────────────────────────────

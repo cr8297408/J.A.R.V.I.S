@@ -30,7 +30,11 @@ def play_sfx(sound_name):
 
 
 def start_vad_thread(
-    interrupt_event: threading.Event, summarizer=None, tts=None, loop=None
+    interrupt_event: threading.Event,
+    summarizer=None,
+    tts=None,
+    loop=None,
+    on_transcription=None,
 ):
     """
     Máquina de estados de Escucha Activa:
@@ -216,7 +220,12 @@ def start_vad_thread(
 
                             user_context["last_command"] = text
 
-                            # Evaluación inteligente si hay un summarizer
+                            # Modo API: callback directo, sin GhostTyper ni PTY
+                            if on_transcription is not None:
+                                on_transcription(text)
+                                return
+
+                            # Modo PTY: evaluación inteligente con el summarizer
                             if (
                                 summarizer
                                 and loop
