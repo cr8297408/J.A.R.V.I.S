@@ -76,7 +76,7 @@ class ClaudeAPIAdapter:
         self._history.append({"role": "user", "content": user_message})
 
         lexer = StreamingLexer()
-        full_response = ""
+        chunks: list[str] = []  # Fix #3: evitar O(n²) con concatenación de strings
 
         try:
             async with self.client.messages.stream(
@@ -86,30 +86,35 @@ class ClaudeAPIAdapter:
                 messages=self._history,
             ) as stream:
                 async for text_chunk in stream.text_stream:
-                    full_response += text_chunk
+                    chunks.append(text_chunk)
                     chunk_type, content = await lexer.process_token(text_chunk)
                     if chunk_type is not None and content:
                         yield chunk_type, content
 
-            # Flush: si el lexer tiene texto sin delimitador final, lo emitimos
-            if lexer.buffer.strip():
-                yield "TEXT_CHUNK", lexer.buffer.strip()
+            # Fix #4: flush respetando el estado del lexer
+            pending = lexer.buffer.strip()
+            if pending:
+                yield ("CODE_BLOCK" if lexer.in_code_block else "TEXT_CHUNK"), pending
                 lexer.buffer = ""
 
         except anthropic.AuthenticationError:
             logger.error("Claude API: clave inválida o expirada.")
+            self._history.pop()  # Fix #2: revertir user message huérfano
             yield "TEXT_CHUNK", "Señor, la clave de Anthropic no es válida."
             return
         except anthropic.RateLimitError:
             logger.error("Claude API: rate limit alcanzado.")
+            self._history.pop()  # Fix #2
             yield "TEXT_CHUNK", "Señor, alcanzamos el límite de la API. Esperemos un momento."
             return
         except Exception as e:
             logger.error(f"Claude API error: {e}")
+            self._history.pop()  # Fix #2
             yield "TEXT_CHUNK", "Señor, hubo un error al contactar a Claude."
             return
 
         # Guardar la respuesta completa en el historial para multi-turn
+        full_response = "".join(chunks)
         if full_response:
             self._history.append({"role": "assistant", "content": full_response})
             self._maybe_compact_history()
@@ -123,6 +128,15 @@ class ClaudeAPIAdapter:
         if len(self._history) > MAX_MESSAGES:
             self._history = self._history[-MAX_MESSAGES:]
             logger.info("Historial compactado — conservando últimos 20 turnos.")
+
+    def abort_last_turn(self) -> None:
+        """
+        Descarta el turno incompleto cuando hay barge-in.
+        Elimina el último mensaje del usuario si no tiene respuesta del assistant.
+        """
+        if self._history and self._history[-1]["role"] == "user":
+            self._history.pop()
+            logger.info("Turno abortado — mensaje del usuario revertido del historial.")
 
     def reset_history(self) -> None:
         """Limpia el historial de conversación (nueva sesión)."""

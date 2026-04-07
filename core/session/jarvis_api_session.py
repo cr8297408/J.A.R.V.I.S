@@ -85,7 +85,7 @@ class JarvisAPISession:
             # Si el usuario interrumpió mientras Claude generaba, cortamos
             if self.interrupt_event.is_set():
                 logger.info("Barge-in durante generación — cortando respuesta.")
-                self.claude._history.pop()  # Descartamos la respuesta incompleta
+                self.claude.abort_last_turn()  # Fix #1: API pública, revierte solo si el turno quedó huérfano
                 break
 
             if chunk_type == "TEXT_CHUNK":
