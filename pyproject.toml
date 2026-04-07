@@ -1,0 +1,30 @@
+[build-system]
+requires = ["setuptools>=42", "wheel"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "jarvis-voice-cli"
+version = "0.1.0"
+description = "J.A.R.V.I.S. — Voice-First Programming CLI"
+requires-python = ">=3.10"
+dependencies = [
+    "click>=8.1",
+    "pyaudio",
+    "webrtcvad",
+    "numpy",
+    "google-generativeai",
+    "groq",
+    "openai",
+    "python-dotenv",
+    "edge-tts>=7.2.7",
+    "openwakeword",
+    "mlx-whisper",
+    "setuptools",
+]
+
+[project.scripts]
+jarvis = "jarvis.cli:main"
+
+[tool.setuptools.packages.find]
+where = ["."]
+include = ["jarvis*", "core*", "adapters*"]
