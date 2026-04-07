@@ -111,10 +111,23 @@ def start(backend: str | None, mode: str) -> None:
     """Inicia J.A.R.V.I.S. con el backend y modo seleccionados."""
     _load_dotenv()
 
-    # Determinar backend efectivo
+    # Determinar backend efectivo (re-leemos después de cargar .env, porque Click
+    # parsea envvar antes de que _load_dotenv() corra)
     effective_backend = (backend or os.getenv("ACTIVE_BRAIN_ENGINE", "gemini")).lower()
 
-    # Validar entorno ANTES de arrancar
+    allowed_backends = set(REQUIRED_VARS.keys())
+    if effective_backend not in allowed_backends:
+        click.echo(click.style("\n[J.A.R.V.I.S] Error de configuración:\n", fg="red", bold=True))
+        _fail(
+            f"Backend inválido: '{effective_backend}'. "
+            f"Valores permitidos: {', '.join(sorted(allowed_backends))}."
+        )
+        click.echo(click.style(
+            "\nCorregí ACTIVE_BRAIN_ENGINE en .env o usá --backend.\n", fg="yellow"
+        ))
+        sys.exit(1)
+
+    # Validar env vars del backend seleccionado
     errors = _validate_env(effective_backend)
     if errors:
         click.echo(click.style("\n[J.A.R.V.I.S] Error de configuración:\n", fg="red", bold=True))
@@ -149,30 +162,55 @@ def start(backend: str | None, mode: str) -> None:
         _start_daemon()
 
 
+def _wakeword_model_dirs() -> list[str]:
+    """Todas las ubicaciones donde openwakeword puede guardar modelos."""
+    dirs: list[str] = []
+    try:
+        import openwakeword
+        dirs.append(os.path.join(os.path.dirname(openwakeword.__file__), "resources", "models"))
+    except Exception:
+        pass
+    home = os.path.expanduser("~")
+    dirs.append(os.path.join(home, "Library", "Caches", "openwakeword"))  # macOS
+    dirs.append(os.path.join(os.getenv("XDG_CACHE_HOME", os.path.join(home, ".cache")), "openwakeword"))  # Linux
+    local_app = os.getenv("LOCALAPPDATA")
+    if local_app:
+        dirs.append(os.path.join(local_app, "openwakeword"))  # Windows
+    # Deduplicar conservando orden
+    seen: set[str] = set()
+    return [d for d in dirs if not (os.path.normpath(d) in seen or seen.add(os.path.normpath(d)))]  # type: ignore[arg-type]
+
+
+def _has_wakeword_models() -> bool:
+    """True si existe al menos un .onnx en alguna ubicación conocida."""
+    for path in _wakeword_model_dirs():
+        if os.path.isdir(path):
+            try:
+                if any(f.endswith(".onnx") for f in os.listdir(path)):
+                    return True
+            except OSError:
+                continue
+    return False
+
+
 def _ensure_models() -> None:
     """
     Verifica que los modelos de wake word estén descargados.
     Si no están, los descarga automáticamente (solo ocurre la primera vez).
     """
     try:
-        import openwakeword
-        models_path = os.path.join(
-            os.path.dirname(openwakeword.__file__), "resources", "models"
-        )
-        has_models = (
-            os.path.isdir(models_path)
-            and any(f.endswith(".onnx") for f in os.listdir(models_path))
-        )
-        if not has_models:
-            click.echo(
-                click.style(
-                    "\n[J.A.R.V.I.S] Primera ejecución — descargando modelos de wake word...",
-                    fg="yellow",
-                )
-            )
-            from openwakeword.utils import download_models
-            download_models()
+        if _has_wakeword_models():
+            return
+        click.echo(click.style(
+            "\n[J.A.R.V.I.S] Primera ejecución — descargando modelos de wake word...",
+            fg="yellow",
+        ))
+        from openwakeword.utils import download_models
+        download_models()
+        if _has_wakeword_models():
             click.echo(click.style("  ✓ Modelos descargados correctamente.\n", fg="green"))
+        else:
+            _warn(f"Descarga completada pero modelos no encontrados. Rutas buscadas: {_wakeword_model_dirs()}")
     except Exception as e:
         click.echo(click.style(f"\n  ⚠ No se pudieron descargar los modelos: {e}\n", fg="yellow"))
 
@@ -218,7 +256,7 @@ def doctor(backend: str | None) -> None:
     # ── Python ────────────────────────────────────────────────────────────────
     _header("Python")
     major, minor = sys.version_info[:2]
-    if major >= 3 and minor >= 10:
+    if sys.version_info >= (3, 10):
         _ok(f"Python {major}.{minor} (mínimo requerido: 3.10)")
     else:
         _fail(f"Python {major}.{minor} — se requiere 3.10 o superior")
@@ -337,24 +375,17 @@ def doctor(backend: str | None) -> None:
 
 
 def _check_wakeword_models() -> None:
-    """Verifica que los modelos de wake word estén descargados."""
-    models_dir = os.path.expanduser("~/.jarvis/models")
-    openwakeword_cache = os.path.join(
-        os.path.expanduser("~"),
-        "Library", "Caches", "openwakeword"
-    )
-
-    found_any = False
-    for search_path in [models_dir, openwakeword_cache]:
-        if os.path.isdir(search_path):
-            model_files = [f for f in os.listdir(search_path) if f.endswith((".onnx", ".tflite"))]
-            if model_files:
-                _ok(f"Modelos wake word encontrados en {search_path} ({len(model_files)} archivos)")
-                found_any = True
-                break
-
-    if not found_any:
-        _warn("Modelos de wake word no encontrados — ejecutá: python download_models.py")
+    """Verifica que los modelos de wake word estén descargados (usa la misma lógica que _ensure_models)."""
+    for path in _wakeword_model_dirs():
+        if os.path.isdir(path):
+            try:
+                models = [f for f in os.listdir(path) if f.endswith(".onnx")]
+                if models:
+                    _ok(f"Modelos wake word en {path} ({len(models)} archivos)")
+                    return
+            except OSError:
+                continue
+    _warn("Modelos de wake word no encontrados — se descargarán automáticamente al hacer 'jarvis start'")
 
 
 # ─── jarvis config ────────────────────────────────────────────────────────────
