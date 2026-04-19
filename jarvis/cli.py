@@ -107,7 +107,19 @@ def main() -> None:
         "'pty' wrappea el CLI directamente en la terminal actual."
     ),
 )
-def start(backend: str | None, mode: str) -> None:
+@click.option(
+    "--cli",
+    "cli_tool",
+    type=click.Choice(["gemini", "claude-code"], case_sensitive=False),
+    default="gemini",
+    show_default=True,
+    help=(
+        "CLI a wrappear en modo PTY. "
+        "'gemini' usa Gemini CLI, "
+        "'claude-code' usa Claude Code CLI (`claude`)."
+    ),
+)
+def start(backend: str | None, mode: str, cli_tool: str) -> None:
     """Inicia J.A.R.V.I.S. con el backend y modo seleccionados."""
     _load_dotenv()
 
@@ -148,16 +160,17 @@ def start(backend: str | None, mode: str) -> None:
     # Descargar modelos si es la primera vez
     _ensure_models()
 
+    cli_label = f", cli: {cli_tool}" if mode == "pty" else ""
     click.echo(
         click.style(
-            f"\n[J.A.R.V.I.S] Iniciando — backend: {effective_backend.upper()}, modo: {mode}\n",
+            f"\n[J.A.R.V.I.S] Iniciando — backend: {effective_backend.upper()}, modo: {mode}{cli_label}\n",
             fg="cyan",
             bold=True,
         )
     )
 
     if mode == "pty":
-        _start_pty()
+        _start_pty(cli_tool)
     else:
         _start_daemon()
 
@@ -215,14 +228,30 @@ def _ensure_models() -> None:
         click.echo(click.style(f"\n  ⚠ No se pudieron descargar los modelos: {e}\n", fg="yellow"))
 
 
-def _start_pty() -> None:
-    """Inicia el modo PTY (wrappea el CLI en la terminal actual)."""
-    try:
-        import main as jarvis_main
-        jarvis_main.main()
-    except ImportError as e:
-        _fail(f"No se pudo cargar el modo PTY: {e}")
-        sys.exit(1)
+def _start_pty(cli_tool: str = "gemini") -> None:
+    """
+    Inicia el modo PTY.
+    - 'gemini'      → main.py (Gemini CLI wrapper original)
+    - 'claude-code' → ClaudeCodePtySession (Claude Code CLI wrapper)
+    """
+    if cli_tool == "claude-code":
+        try:
+            import shutil
+            if not shutil.which("claude"):
+                _fail("Claude Code CLI no encontrado. Instalalo con: npm install -g @anthropic-ai/claude-code")
+                sys.exit(1)
+            from core.session.claude_code_pty_session import ClaudeCodePtySession
+            ClaudeCodePtySession().run()
+        except ImportError as e:
+            _fail(f"No se pudo cargar la sesión Claude Code PTY: {e}")
+            sys.exit(1)
+    else:
+        try:
+            import main as jarvis_main
+            jarvis_main.main()
+        except ImportError as e:
+            _fail(f"No se pudo cargar el modo PTY (Gemini): {e}")
+            sys.exit(1)
 
 
 def _start_daemon() -> None:

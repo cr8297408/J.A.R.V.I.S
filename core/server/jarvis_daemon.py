@@ -3,6 +3,7 @@ import os
 import asyncio
 import threading
 import logging
+import time
 
 # Configurar logs básicos para el Daemon
 logging.basicConfig(
@@ -149,9 +150,15 @@ async def process_text_queue():
                     if payload.get("notification_type") == "ToolPermission":
                         # Extraer mensaje de la notificación y detalles
                         details = payload.get("details", {})
-                        
+
                         # Inyectar el directorio actual de invocación para que la IA sepa dónde está "parada"
                         details["cwd_context"] = os.getenv("JARVIS_INVOCATION_DIR", os.getcwd())
+
+                        # Registrar cuándo llegó el permiso para detectar aprobaciones tardías
+                        permission_timestamp = time.monotonic()
+                        user_context["pending_permission_ts"] = permission_timestamp
+                        # Timeout: si el usuario tarda más de 90s, el permiso se considera expirado
+                        PERMISSION_TIMEOUT_SECS = 90
 
                         logging.info(
                             f"Notificación de herramienta detectada. Detalles: {details}. Solicitando resumen a IA..."

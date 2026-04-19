@@ -30,15 +30,27 @@ class JarvisAPISession:
         self.tts = MacSayTTS()
         self.interrupt_event = threading.Event()
         self._loop: asyncio.AbstractEventLoop | None = None
+        self._hotkey_listener = None
 
     # ── Punto de entrada ──────────────────────────────────────────────────────
 
     def run(self) -> None:
         """Inicia la sesión. Bloqueante hasta Ctrl+C."""
-        print("\r\n[J.A.R.V.I.S] Modo API — Claude directo. Di 'Hey Jarvis' para empezar.\r\n")
+        from core.input.hotkey_listener import HotkeyListener, DEFAULT_HOTKEY
+        import os
+        hotkey = os.getenv("JARVIS_STOP_HOTKEY", DEFAULT_HOTKEY)
+        print(
+            f"\r\n[J.A.R.V.I.S] Modo API — Claude directo. "
+            f"Di 'Hey Jarvis' para empezar.\r\n"
+            f"[J.A.R.V.I.S] Presioná {hotkey} para detener una respuesta en curso.\r\n"
+        )
 
         self._loop = asyncio.new_event_loop()
         asyncio.set_event_loop(self._loop)
+
+        # Hotkey global para detener ejecuciones (reemplaza el barge-in por VAD)
+        self._hotkey_listener = HotkeyListener(on_stop=self.interrupt_event.set)
+        self._hotkey_listener.start()
 
         # Arrancar el VAD en un hilo demonio con nuestro callback
         from core.audio.vad_listener import start_vad_thread
@@ -53,6 +65,7 @@ class JarvisAPISession:
         except KeyboardInterrupt:
             logger.info("Sesión API terminada por el usuario.")
         finally:
+            self._hotkey_listener.stop()
             self._loop.close()
 
     # ── Callback de transcripción ─────────────────────────────────────────────
