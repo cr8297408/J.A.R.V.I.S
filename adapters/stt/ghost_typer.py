@@ -84,9 +84,13 @@ class GhostTyper:
         if has_tmux_session:
             logging.info("Inyectando texto via tmux en background...")
             # Usar tmux send-keys con el flag -l para insertar el texto literal, asegurando que no se interpreten caracteres especiales
-            subprocess.run(["tmux", "send-keys", "-t", "jarvis_gemini", "-l", text], check=False)
-            # Enviar el Enter key
-            subprocess.run(["tmux", "send-keys", "-t", "jarvis_gemini", "Enter"], check=False)
+            result_text = subprocess.run(["tmux", "send-keys", "-t", "jarvis_gemini", "-l", text], capture_output=True)
+            time.sleep(0.15)  # 150ms para que el terminal (React/Ink) procese el texto antes del Enter
+            result_enter = subprocess.run(["tmux", "send-keys", "-t", "jarvis_gemini", "Enter"], capture_output=True)
+            if result_text.returncode != 0 or result_enter.returncode != 0:
+                logging.warning(f"tmux send-keys falló — text:{result_text.returncode} enter:{result_enter.returncode}. Stderr: {result_enter.stderr.decode().strip()}")
+            else:
+                logging.info("Texto + Enter enviados correctamente via tmux.")
             return
 
         # 1. Fallback a AppleScript: Guardar el texto en el portapapeles de Mac (es mucho más confiable que simular teclas de a una)

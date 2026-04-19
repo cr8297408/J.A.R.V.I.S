@@ -69,8 +69,9 @@ class EdgeTTS:
                 os.remove(temp_file)
             return
 
-        # 2. Reproducir el archivo generado usando afplay (nativo de Mac)
-        self.current_process = subprocess.Popen(["afplay", temp_file])
+        # 2. Reproducir el archivo generado con el player disponible en la plataforma
+        from core.platform_utils import get_audio_player_cmd
+        self.current_process = subprocess.Popen(get_audio_player_cmd(temp_file))
 
         # Bucle de monitoreo (El corazón del Barge-in del lado del reproductor)
         while self.current_process.poll() is None:

@@ -1,0 +1,48 @@
+[build-system]
+requires = ["setuptools>=42", "wheel"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "jarvis-voice-cli"
+version = "0.1.0"
+description = "J.A.R.V.I.S. — Voice-First Programming CLI"
+requires-python = ">=3.10"
+dependencies = [
+    "click>=8.1",
+    "pyaudio",
+    "webrtcvad",
+    "numpy",
+    "google-generativeai",
+    "groq",
+    "openai",
+    "python-dotenv",
+    "edge-tts>=7.2.7",
+    "openwakeword",
+    "pynput",
+    "setuptools",
+]
+
+[project.optional-dependencies]
+# Apple Silicon STT (Mac M1/M2/M3/M4 only)
+mac-stt = ["mlx-whisper"]
+
+# Cross-platform STT (Windows, Linux, Intel Mac)
+stt = ["faster-whisper"]
+
+# Desktop tray app (all platforms)
+desktop = ["pystray", "Pillow>=10.0"]
+
+# Full install: everything needed to run on any platform
+all = [
+    "faster-whisper",
+    "pystray",
+    "Pillow>=10.0",
+]
+
+[project.scripts]
+jarvis = "jarvis.cli:main"
+jarvis-desktop = "jarvis.tray:run_tray"
+
+[tool.setuptools.packages.find]
+where = ["."]
+include = ["jarvis*", "core*", "adapters*"]
