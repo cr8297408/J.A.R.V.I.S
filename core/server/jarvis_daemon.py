@@ -5,13 +5,28 @@ import threading
 import logging
 import time
 
+
+def _log_path() -> str:
+    """Returns a writable log file path on any platform (safe for .app/.exe bundles)."""
+    if sys.platform == "darwin":
+        log_dir = os.path.expanduser("~/Library/Logs/JARVIS")
+    elif sys.platform == "win32":
+        log_dir = os.path.join(
+            os.getenv("APPDATA", os.path.expanduser("~")), "JARVIS", "logs"
+        )
+    else:
+        log_dir = os.path.expanduser("~/.local/share/jarvis/logs")
+    os.makedirs(log_dir, exist_ok=True)
+    return os.path.join(log_dir, "jarvis_daemon.log")
+
+
 # Configurar logs básicos para el Daemon
 logging.basicConfig(
     level=logging.INFO,
     format="%(asctime)s - [JARVIS DAEMON] - %(levelname)s - %(message)s",
     handlers=[
         logging.StreamHandler(sys.stdout),
-        logging.FileHandler("jarvis_daemon.log"),
+        logging.FileHandler(_log_path()),
     ],
 )
 

@@ -71,7 +71,7 @@ def _draw_icon(size: int = 512, active: bool = False) -> Image.Image:
 def _save_png(img: Image.Image, name: str) -> None:
     path = os.path.join(ASSETS_DIR, name)
     img.save(path, format="PNG")
-    print(f"  ✓ {path}")
+    print(f"  OK  {path}")
 
 
 def _save_ico(img: Image.Image) -> None:
@@ -79,7 +79,7 @@ def _save_ico(img: Image.Image) -> None:
     sizes = [16, 32, 48, 64, 128, 256]
     imgs = [img.resize((s, s), Image.LANCZOS) for s in sizes]
     imgs[0].save(path, format="ICO", sizes=[(s, s) for s in sizes], append_images=imgs[1:])
-    print(f"  ✓ {path}")
+    print(f"  OK  {path}")
 
 
 def _save_icns(img: Image.Image) -> None:
@@ -89,10 +89,10 @@ def _save_icns(img: Image.Image) -> None:
     import shutil
 
     if sys.platform != "darwin":
-        print("  ⚠ .icns solo se puede generar en macOS. Saltando.")
+        print("  --  .icns solo se puede generar en macOS. Saltando.")
         return
     if not shutil.which("iconutil"):
-        print("  ⚠ iconutil no encontrado. Saltando .icns.")
+        print("  --  iconutil no encontrado. Saltando .icns.")
         return
 
     sizes = [16, 32, 64, 128, 256, 512, 1024]
@@ -108,9 +108,9 @@ def _save_icns(img: Image.Image) -> None:
         result = subprocess.run(["iconutil", "-c", "icns", iconset, "-o", out_path],
                                 capture_output=True)
         if result.returncode == 0:
-            print(f"  ✓ {out_path}")
+            print(f"  OK  {out_path}")
         else:
-            print(f"  ✗ Error generando .icns: {result.stderr.decode()}")
+            print(f"  ERR Error generando .icns: {result.stderr.decode()}")
 
 
 def main() -> None:
@@ -124,7 +124,7 @@ def main() -> None:
     _save_ico(base)
     _save_icns(base)
 
-    print("\n¡Listo! Íconos generados en jarvis/assets/")
+    print("\nIconos generados en jarvis/assets/")
 
 
 if __name__ == "__main__":
