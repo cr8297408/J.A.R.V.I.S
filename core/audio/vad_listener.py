@@ -1,5 +1,6 @@
 import pyaudio
 import numpy as np
+import sys
 import threading
 import logging
 import wave
@@ -8,7 +9,6 @@ import webrtcvad
 import asyncio
 import unicodedata
 from openwakeword.model import Model
-from adapters.stt.mlx_stt import LocalSTT
 from adapters.stt.ghost_typer import GhostTyper
 
 
@@ -26,8 +26,10 @@ jarvis_speaking = threading.Event()
 user_context = {"last_command": "", "last_speech": "", "last_terminal_output": ""}
 
 
-def play_sfx(sound_name):
-    """Reproduce sonidos nativos de Mac para feedback no bloqueante."""
+def play_sfx(sound_name: str) -> None:
+    """Reproduce feedback sonoro no bloqueante. Solo en macOS (afplay)."""
+    if sys.platform != "darwin":
+        return
     sounds = {
         "wake": "/System/Library/Sounds/Ping.aiff",
         "stop": "/System/Library/Sounds/Pop.aiff",
@@ -60,7 +62,8 @@ def start_vad_thread(
         try:
             # Los modelos ahora están descargados correctamente dentro del paquete de openwakeword
             owwModel = Model(wakeword_models=["hey_jarvis"], inference_framework="onnx")
-            stt_engine = LocalSTT()
+            from core.platform_utils import get_stt_class
+            stt_engine = get_stt_class()()
             vad = webrtcvad.Vad(3)  # Agresividad MÁXIMA (3) para ignorar ruido de fondo
         except Exception as e:
             logging.error(f"Fallo cargando modelos: {e}")

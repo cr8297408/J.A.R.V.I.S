@@ -465,5 +465,35 @@ def show_config() -> None:
     )
 
 
+# ─── jarvis desktop ───────────────────────────────────────────────────────────
+
+@main.command("desktop")
+def desktop_mode() -> None:
+    """
+    Lanza J.A.R.V.I.S como app de escritorio (system tray).
+
+    \b
+    No requiere terminal. Aparece como ícono en la barra del sistema.
+    Compatible con macOS, Windows y Linux.
+
+    \b
+    Para personas con discapacidad: activá 'Iniciar con el sistema'
+    desde el menú del ícono para que Jarvis inicie automáticamente.
+    """
+    try:
+        from jarvis.tray import run_tray
+    except ImportError as e:
+        _fail(f"No se pudo cargar el modo desktop: {e}")
+        click.echo(
+            click.style(
+                "\nInstalá las dependencias de escritorio:\n"
+                "  pip install pystray Pillow\n",
+                fg="yellow",
+            )
+        )
+        sys.exit(1)
+    run_tray()
+
+
 if __name__ == "__main__":
     main()

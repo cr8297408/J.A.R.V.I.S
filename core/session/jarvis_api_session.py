@@ -24,10 +24,10 @@ class JarvisAPISession:
 
     def __init__(self, model: str = "smart") -> None:
         from adapters.llm.claude_api_adapter import ClaudeAPIAdapter
-        from adapters.tts.mac_say_tts import MacSayTTS
+        from core.platform_utils import get_tts_class
 
         self.claude = ClaudeAPIAdapter(model=model)
-        self.tts = MacSayTTS()
+        self.tts = get_tts_class()()
         self.interrupt_event = threading.Event()
         self._loop: asyncio.AbstractEventLoop | None = None
         self._hotkey_listener = None
@@ -67,6 +67,13 @@ class JarvisAPISession:
         finally:
             self._hotkey_listener.stop()
             self._loop.close()
+
+    def stop(self) -> None:
+        """Detiene la sesión de forma limpia desde un hilo externo (ej: system tray)."""
+        if self._loop and self._loop.is_running():
+            self._loop.call_soon_threadsafe(self._loop.stop)
+        if self._hotkey_listener:
+            self._hotkey_listener.stop()
 
     # ── Callback de transcripción ─────────────────────────────────────────────
 
