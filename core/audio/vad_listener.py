@@ -1,14 +1,23 @@
 import pyaudio
 import numpy as np
+import sys
 import threading
 import logging
 import wave
 import subprocess
 import webrtcvad
 import asyncio
+import unicodedata
 from openwakeword.model import Model
-from adapters.stt.mlx_stt import LocalSTT
 from adapters.stt.ghost_typer import GhostTyper
+
+
+def _normalize(text: str) -> str:
+    """Minúsculas + strip acentos + eliminar puntuación básica. Usado para el filtro de alucinaciones."""
+    text = text.lower().strip()
+    text = text.replace("!", "").replace("¡", "").replace(".", "").replace(",", "").replace("?", "").replace("¿", "")
+    # Descomponer caracteres Unicode y quedarse solo con ASCII (elimina acentos)
+    return unicodedata.normalize("NFD", text).encode("ascii", "ignore").decode("ascii")
 
 active_listening_requested = threading.Event()
 jarvis_speaking = threading.Event()
@@ -17,8 +26,10 @@ jarvis_speaking = threading.Event()
 user_context = {"last_command": "", "last_speech": "", "last_terminal_output": ""}
 
 
-def play_sfx(sound_name):
-    """Reproduce sonidos nativos de Mac para feedback no bloqueante."""
+def play_sfx(sound_name: str) -> None:
+    """Reproduce feedback sonoro no bloqueante. Solo en macOS (afplay)."""
+    if sys.platform != "darwin":
+        return
     sounds = {
         "wake": "/System/Library/Sounds/Ping.aiff",
         "stop": "/System/Library/Sounds/Pop.aiff",
@@ -30,7 +41,11 @@ def play_sfx(sound_name):
 
 
 def start_vad_thread(
-    interrupt_event: threading.Event, summarizer=None, tts=None, loop=None
+    interrupt_event: threading.Event,
+    summarizer=None,
+    tts=None,
+    loop=None,
+    on_transcription=None,
 ):
     """
     Máquina de estados de Escucha Activa:
@@ -47,7 +62,8 @@ def start_vad_thread(
         try:
             # Los modelos ahora están descargados correctamente dentro del paquete de openwakeword
             owwModel = Model(wakeword_models=["hey_jarvis"], inference_framework="onnx")
-            stt_engine = LocalSTT()
+            from core.platform_utils import get_stt_class
+            stt_engine = get_stt_class()()
             vad = webrtcvad.Vad(3)  # Agresividad MÁXIMA (3) para ignorar ruido de fondo
         except Exception as e:
             logging.error(f"Fallo cargando modelos: {e}")
@@ -79,7 +95,6 @@ def start_vad_thread(
             frames_buffer = []  # Para acumular hasta los 1280 que necesita OWW
             recording_frames = []  # Para guardar el comando entero
             silence_chunks = 0
-            speaking_duration_chunks = 0  # Contador para evitar echo inicial
             MAX_SILENCE_CHUNKS = 50  # ~1.5 segundos de silencio a 30ms por chunk
             MAX_RECORDING_CHUNKS = (
                 2000  # ~15 segundos máximo absoluto (500 * 30ms = 15s)
@@ -92,14 +107,17 @@ def start_vad_thread(
                 raw_audio = stream.read(CHUNK, exception_on_overflow=False)
 
                 if state == "WAITING_WAKEWORD":
-                    if active_listening_requested.is_set():
+                    # Solo activar el auto-trigger DESPUÉS de que Jarvis termine de hablar.
+                    # Si está activo mientras jarvis_speaking está seteado, el mic graba el
+                    # audio del altavoz (echo del TTS) y lo transcribe como un comando.
+                    if active_listening_requested.is_set() and not jarvis_speaking.is_set():
                         logging.info("Auto-triggering recording for follow-up...")
                         play_sfx("wake")
                         owwModel.reset()
+                        active_listening_requested.clear()
                         state = "RECORDING_COMMAND"
                         recording_frames = []
                         silence_chunks = 0
-                        speaking_duration_chunks = 0
                         frames_buffer = []
                         continue
 
@@ -134,12 +152,19 @@ def start_vad_thread(
                                 state = "RECORDING_COMMAND"
                                 recording_frames = []
                                 silence_chunks = 0
-                                speaking_duration_chunks = 0
                                 break  # Salir del for loop
 
                         frames_buffer = []  # Limpiar buffer corto
 
                 elif state == "RECORDING_COMMAND":
+                    # Si Jarvis está hablando, descartamos los frames acumulados.
+                    # Así evitamos que el eco del altavoz quede grabado y sea
+                    # transcripto como si fuera el usuario hablando.
+                    if jarvis_speaking.is_set():
+                        recording_frames = []
+                        silence_chunks = 0
+                        continue
+
                     recording_frames.append(raw_audio)
 
                     # 1. Calcular volumen (RMS) del chunk actual
@@ -158,19 +183,6 @@ def start_vad_thread(
                             silence_chunks += 1
                     else:
                         silence_chunks = 0  # Resetear si detecta voz real
-
-                        # Barge-in (Interrupción): Si Jarvis está hablando y detectamos voz humana fuerte,
-                        # lo cortamos al instante.
-                        if jarvis_speaking.is_set():
-                            speaking_duration_chunks += 1
-                            # Solo interrumpir después de ~750ms de habla para evitar echo inicial
-                            # y con un umbral de volumen mucho más alto (1500 RMS)
-                            if is_speech and rms > 1500 and speaking_duration_chunks > 25:
-                                if not interrupt_event.is_set():
-                                    logging.info("Barge-in detectado: Silenciando a Jarvis.")
-                                    interrupt_event.set()
-                        else:
-                            speaking_duration_chunks = 0
 
                     # Si detectó ~1.5s de silencio o pasamos el límite absoluto de tiempo
                     if (
@@ -208,15 +220,21 @@ def start_vad_thread(
 
                             logging.info(f"Voz detectada: {text}")
                             
-                            # Filtro de alucinaciones comunes de Whisper en silencio/ruido
-                            t_clean = text.lower().strip().replace("!", "").replace("¡", "").replace(".", "")
-                            if t_clean in ["suscribete", "subscribete", "gracias por ver", "gracias", "watching"]:
+                            # Filtro de alucinaciones comunes de Whisper en silencio/ruido.
+                            # _normalize() elimina acentos para que "¡Suscríbete!" == "suscribete".
+                            t_clean = _normalize(text)
+                            if t_clean in ["suscribete", "subscribete", "gracias por ver", "gracias", "watching", "subtitulos por", "transcrito por"]:
                                 logging.info(f"Hallucination filtrada: {text}")
                                 return
 
                             user_context["last_command"] = text
 
-                            # Evaluación inteligente si hay un summarizer
+                            # Modo API: callback directo, sin GhostTyper ni PTY
+                            if on_transcription is not None:
+                                on_transcription(text)
+                                return
+
+                            # Modo PTY: evaluación inteligente con el summarizer
                             if (
                                 summarizer
                                 and loop
@@ -236,14 +254,31 @@ def start_vad_thread(
                                     logging.info(f"[Cerebro Jarvis] {reasoning} -> {action}")
 
                                     if action == "authorize":
-                                        GhostTyper.type_string(value if value else "1")
+                                        # Verificar que el permiso no haya expirado.
+                                        # Si pasaron más de 90s desde que llegó la notificación,
+                                        # Gemini ya procesó o descartó el permiso — no enviamos "1".
+                                        import time as _time
+                                        pending_ts = user_context.get("pending_permission_ts")
+                                        PERMISSION_TIMEOUT_SECS = 90
+                                        if pending_ts and (_time.monotonic() - pending_ts) > PERMISSION_TIMEOUT_SECS:
+                                            logging.warning(
+                                                f"Aprobación tardía descartada — "
+                                                f"{_time.monotonic() - pending_ts:.0f}s desde el permiso (límite {PERMISSION_TIMEOUT_SECS}s). "
+                                                "Gemini ya procesó o descartó la solicitud."
+                                            )
+                                            # TODO: notificar al usuario por TTS que llegó tarde
+                                        else:
+                                            user_context["pending_permission_ts"] = None
+                                            GhostTyper.type_string(value if value else "1")
                                     elif action == "type":
                                         GhostTyper.type_string(value if value else text)
+                                    elif action == "answer":
+                                        # El usuario hace una pregunta → va al terminal para que el LLM responda.
+                                        GhostTyper.type_string(text)
                                     elif action == "ignore":
                                         logging.info("Entrada ignorada.")
                                     else:
-                                        # Fallback para "answer" o desconocidos
-                                        GhostTyper.type_string(text)
+                                        logging.info(f"Acción desconocida '{action}' — ignorando para no contaminar el terminal.")
                                 except Exception as e:
                                     logging.error(f"Error evaluando respuesta: {e}")
                                     GhostTyper.type_string(text)

@@ -18,12 +18,30 @@ dependencies = [
     "python-dotenv",
     "edge-tts>=7.2.7",
     "openwakeword",
-    "mlx-whisper",
+    "pynput",
     "setuptools",
+]
+
+[project.optional-dependencies]
+# Apple Silicon STT (Mac M1/M2/M3/M4 only)
+mac-stt = ["mlx-whisper"]
+
+# Cross-platform STT (Windows, Linux, Intel Mac)
+stt = ["faster-whisper"]
+
+# Desktop tray app (all platforms)
+desktop = ["pystray", "Pillow>=10.0"]
+
+# Full install: everything needed to run on any platform
+all = [
+    "faster-whisper",
+    "pystray",
+    "Pillow>=10.0",
 ]
 
 [project.scripts]
 jarvis = "jarvis.cli:main"
+jarvis-desktop = "jarvis.tray:run_tray"
 
 [tool.setuptools.packages.find]
 where = ["."]

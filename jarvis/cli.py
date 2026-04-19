@@ -107,7 +107,19 @@ def main() -> None:
         "'pty' wrappea el CLI directamente en la terminal actual."
     ),
 )
-def start(backend: str | None, mode: str) -> None:
+@click.option(
+    "--cli",
+    "cli_tool",
+    type=click.Choice(["gemini", "claude-code"], case_sensitive=False),
+    default="gemini",
+    show_default=True,
+    help=(
+        "CLI a wrappear en modo PTY. "
+        "'gemini' usa Gemini CLI, "
+        "'claude-code' usa Claude Code CLI (`claude`)."
+    ),
+)
+def start(backend: str | None, mode: str, cli_tool: str) -> None:
     """Inicia J.A.R.V.I.S. con el backend y modo seleccionados."""
     _load_dotenv()
 
@@ -148,16 +160,17 @@ def start(backend: str | None, mode: str) -> None:
     # Descargar modelos si es la primera vez
     _ensure_models()
 
+    cli_label = f", cli: {cli_tool}" if mode == "pty" else ""
     click.echo(
         click.style(
-            f"\n[J.A.R.V.I.S] Iniciando — backend: {effective_backend.upper()}, modo: {mode}\n",
+            f"\n[J.A.R.V.I.S] Iniciando — backend: {effective_backend.upper()}, modo: {mode}{cli_label}\n",
             fg="cyan",
             bold=True,
         )
     )
 
     if mode == "pty":
-        _start_pty()
+        _start_pty(cli_tool)
     else:
         _start_daemon()
 
@@ -215,24 +228,55 @@ def _ensure_models() -> None:
         click.echo(click.style(f"\n  ⚠ No se pudieron descargar los modelos: {e}\n", fg="yellow"))
 
 
-def _start_pty() -> None:
-    """Inicia el modo PTY (wrappea el CLI en la terminal actual)."""
-    try:
-        import main as jarvis_main
-        jarvis_main.main()
-    except ImportError as e:
-        _fail(f"No se pudo cargar el modo PTY: {e}")
-        sys.exit(1)
+def _start_pty(cli_tool: str = "gemini") -> None:
+    """
+    Inicia el modo PTY.
+    - 'gemini'      → main.py (Gemini CLI wrapper original)
+    - 'claude-code' → ClaudeCodePtySession (Claude Code CLI wrapper)
+    """
+    if cli_tool == "claude-code":
+        try:
+            import shutil
+            if not shutil.which("claude"):
+                _fail("Claude Code CLI no encontrado. Instalalo con: npm install -g @anthropic-ai/claude-code")
+                sys.exit(1)
+            from core.session.claude_code_pty_session import ClaudeCodePtySession
+            ClaudeCodePtySession().run()
+        except ImportError as e:
+            _fail(f"No se pudo cargar la sesión Claude Code PTY: {e}")
+            sys.exit(1)
+    else:
+        try:
+            import main as jarvis_main
+            jarvis_main.main()
+        except ImportError as e:
+            _fail(f"No se pudo cargar el modo PTY (Gemini): {e}")
+            sys.exit(1)
 
 
 def _start_daemon() -> None:
-    """Inicia el modo Daemon (servidor TCP + hooks)."""
-    try:
-        from core.server import jarvis_daemon
-        jarvis_daemon.main()
-    except ImportError as e:
-        _fail(f"No se pudo cargar el daemon: {e}")
-        sys.exit(1)
+    """
+    Inicia el modo de operación según el backend seleccionado.
+    - claude  → JarvisAPISession (streaming directo, sin PTY)
+    - gemini / groq → daemon TCP con hooks del CLI
+    """
+    backend = os.getenv("ACTIVE_BRAIN_ENGINE", "gemini").lower()
+
+    if backend == "claude":
+        try:
+            from core.session.jarvis_api_session import JarvisAPISession
+            session = JarvisAPISession()
+            session.run()
+        except ImportError as e:
+            _fail(f"No se pudo cargar la sesión Claude API: {e}")
+            sys.exit(1)
+    else:
+        try:
+            from core.server import jarvis_daemon
+            jarvis_daemon.main()
+        except ImportError as e:
+            _fail(f"No se pudo cargar el daemon: {e}")
+            sys.exit(1)
 
 
 # ─── jarvis doctor ────────────────────────────────────────────────────────────
@@ -419,6 +463,36 @@ def show_config() -> None:
             fg="yellow",
         )
     )
+
+
+# ─── jarvis desktop ───────────────────────────────────────────────────────────
+
+@main.command("desktop")
+def desktop_mode() -> None:
+    """
+    Lanza J.A.R.V.I.S como app de escritorio (system tray).
+
+    \b
+    No requiere terminal. Aparece como ícono en la barra del sistema.
+    Compatible con macOS, Windows y Linux.
+
+    \b
+    Para personas con discapacidad: activá 'Iniciar con el sistema'
+    desde el menú del ícono para que Jarvis inicie automáticamente.
+    """
+    try:
+        from jarvis.tray import run_tray
+    except ImportError as e:
+        _fail(f"No se pudo cargar el modo desktop: {e}")
+        click.echo(
+            click.style(
+                "\nInstalá las dependencias de escritorio:\n"
+                "  pip install pystray Pillow\n",
+                fg="yellow",
+            )
+        )
+        sys.exit(1)
+    run_tray()
 
 
 if __name__ == "__main__":
