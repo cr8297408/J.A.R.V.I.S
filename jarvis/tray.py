@@ -21,6 +21,50 @@ _ROOT = os.path.dirname(_HERE)
 if _ROOT not in sys.path:
     sys.path.insert(0, _ROOT)
 
+# When frozen by PyInstaller, _ROOT points to a temp read-only dir.
+# All user config lives in a platform-appropriate writable directory instead.
+_FROZEN = getattr(sys, "frozen", False)
+
+
+def _config_dir() -> str:
+    """Returns the writable user config directory for J.A.R.V.I.S."""
+    if sys.platform == "darwin":
+        base = os.path.expanduser("~/Library/Application Support/JARVIS")
+    elif sys.platform == "win32":
+        base = os.path.join(os.getenv("APPDATA", os.path.expanduser("~")), "JARVIS")
+    else:
+        base = os.path.expanduser("~/.config/jarvis")
+    os.makedirs(base, exist_ok=True)
+    return base
+
+
+def _env_path() -> str:
+    """
+    Returns the path to the .env config file.
+    In dev mode: project root .env (existing behavior).
+    In bundled mode: user config directory .env.
+    """
+    if _FROZEN:
+        return os.path.join(_config_dir(), ".env")
+    return os.path.join(_ROOT, ".env")
+
+
+def _ensure_env_exists() -> None:
+    """
+    On first run of a bundled app, copy .env.example from the bundle
+    to the user config directory so the user has a template to fill in.
+    """
+    if not _FROZEN:
+        return
+    target = _env_path()
+    if os.path.exists(target):
+        return
+    # Look for .env.example inside the PyInstaller bundle
+    example = os.path.join(getattr(sys, "_MEIPASS", _ROOT), ".env.example")
+    if os.path.exists(example):
+        import shutil
+        shutil.copy(example, target)
+
 
 def _require(package: str, install_hint: str) -> None:
     try:
@@ -231,8 +275,8 @@ class _TrayController:
 
         def _run() -> None:
             try:
-                from jarvis.cli import _load_dotenv
-                _load_dotenv()
+                from dotenv import load_dotenv
+                load_dotenv(_env_path(), override=True)
                 backend = os.getenv("ACTIVE_BRAIN_ENGINE", "gemini").lower()
                 if backend == "claude":
                     from core.session.jarvis_api_session import JarvisAPISession
@@ -281,18 +325,32 @@ class _TrayController:
 
     def open_config(self, icon: pystray.Icon, item: pystray.MenuItem) -> None:
         import subprocess
-        env_path = os.path.join(_ROOT, ".env")
-        if not os.path.exists(env_path):
-            example = os.path.join(_ROOT, ".env.example")
-            if os.path.exists(example):
-                import shutil
-                shutil.copy(example, env_path)
-        if sys.platform == "darwin":
-            subprocess.run(["open", env_path])
-        elif sys.platform == "win32":
-            os.startfile(env_path)  # type: ignore[attr-defined]
-        else:
-            subprocess.run(["xdg-open", env_path])
+
+        _ensure_env_exists()
+        target = _env_path()
+
+        # If the file still doesn't exist, create a minimal template
+        if not os.path.exists(target):
+            with open(target, "w") as f:
+                f.write(
+                    "# J.A.R.V.I.S Configuration\n"
+                    "# Fill in your API keys and save the file.\n\n"
+                    "ACTIVE_BRAIN_ENGINE=claude\n"
+                    "ANTHROPIC_API_KEY=\n"
+                    "GEMINI_API_KEY=\n"
+                    "GROQ_API_KEY=\n"
+                )
+
+        try:
+            if sys.platform == "darwin":
+                subprocess.Popen(["open", target])
+            elif sys.platform == "win32":
+                os.startfile(target)  # type: ignore[attr-defined]
+            else:
+                subprocess.Popen(["xdg-open", target])
+        except Exception as exc:
+            logger.error("[Tray] No se pudo abrir el archivo de config: %s", exc)
+            self._notify(f"Config en: {target}")
 
     # ── Quit ──────────────────────────────────────────────────────────────────
 
@@ -333,12 +391,15 @@ class _TrayController:
 
 def run_tray() -> None:
     """Launch J.A.R.V.I.S as a system tray application. No terminal needed."""
-    # Load .env before anything so ACTIVE_BRAIN_ENGINE is available at startup
+    # On first bundled run, copy .env template to the user config dir
+    _ensure_env_exists()
+
+    # Load .env from the correct location (user config dir when bundled, project root in dev)
     try:
         from dotenv import load_dotenv
-        env_path = os.path.join(_ROOT, ".env")
-        if os.path.exists(env_path):
-            load_dotenv(env_path)
+        env = _env_path()
+        if os.path.exists(env):
+            load_dotenv(env)
     except ImportError:
         pass
 
