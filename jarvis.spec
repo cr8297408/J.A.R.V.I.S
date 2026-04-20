@@ -40,11 +40,17 @@ hidden = [
     "core.server.jarvis_daemon",
     # Adapters
     "adapters.llm.claude_api_adapter",
+    "adapters.llm.gemini_summarizer",
+    "adapters.llm.groq_summarizer",
+    "adapters.llm.openrouter_summarizer",
     "adapters.tts.mac_say_tts",
     "adapters.tts.edge_tts_adapter",
     "adapters.stt.ghost_typer",
-    # Third-party
+    # Third-party — LLM backends (all must be bundled regardless of active engine)
     "anthropic",
+    "groq",
+    "google.generativeai",
+    "openai",
     "click",
     "pynput",
     "pynput.keyboard._darwin",

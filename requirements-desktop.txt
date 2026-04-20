@@ -2,7 +2,12 @@ pyinstaller
 pystray
 Pillow
 click
+# LLM backends
 anthropic>=0.40.0
+google-generativeai
+groq
+openai
+# Audio pipeline
 pyaudio
 webrtcvad
 numpy
