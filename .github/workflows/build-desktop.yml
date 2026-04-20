@@ -28,12 +28,6 @@ jobs:
             platform: mac
             artifact-name: JARVIS-macOS-arm64
 
-          # macOS Intel — uses faster-whisper
-          - runner: macos-13
-            os-label: macOS (Intel)
-            platform: mac
-            artifact-name: JARVIS-macOS-x86_64
-
           # Windows x64
           - runner: windows-latest
             os-label: Windows x64
@@ -97,6 +91,10 @@ jobs:
       # ── Generate icons ─────────────────────────────────────────────────────
       - name: Generate icon assets
         run: python scripts/generate_icon.py
+
+      # ── Download wake word models (bundled into the app, no internet needed at runtime) ──
+      - name: Download wake word models
+        run: python -c "from openwakeword.utils import download_models; download_models()"
 
       # ── Build with PyInstaller ─────────────────────────────────────────────
       - name: Build with PyInstaller

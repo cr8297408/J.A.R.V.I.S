@@ -242,6 +242,112 @@ def _disable_autostart() -> None:
         os.remove(path)
 
 
+# ── Quick TTS (pre-session, no full pipeline needed) ──────────────────────────
+
+def _speak(text: str) -> None:
+    """
+    Speak text using platform-native TTS. Non-blocking.
+    Used for startup narration and error reporting before the full session loads.
+    """
+    import shutil
+    import subprocess
+    try:
+        if sys.platform == "darwin":
+            subprocess.Popen(["say", "-v", "Mónica", text])
+        elif sys.platform == "win32":
+            script = (
+                "Add-Type -AssemblyName System.Speech; "
+                "$s = New-Object System.Speech.Synthesis.SpeechSynthesizer; "
+                f'$s.Speak("{text.replace(chr(34), chr(39))}")'
+            )
+            subprocess.Popen(["powershell", "-Command", script])
+        else:
+            for cmd in ["espeak", "festival", "spd-say"]:
+                if shutil.which(cmd):
+                    subprocess.Popen([cmd, text])
+                    break
+    except Exception as exc:
+        logger.warning("[TTS] No se pudo hablar: %s", exc)
+
+
+# ── Pre-flight checks ──────────────────────────────────────────────────────────
+
+_REQUIRED_PACKAGES = [
+    ("pyaudio", "pyaudio"),
+    ("webrtcvad", "webrtcvad"),
+    ("openwakeword", "openwakeword"),
+    ("numpy", "numpy"),
+    ("dotenv", "python-dotenv"),
+]
+
+
+def _check_required_packages() -> list[str]:
+    """Returns list of pip package names that are missing."""
+    missing = []
+    for module, pip_name in _REQUIRED_PACKAGES:
+        try:
+            __import__(module)
+        except ImportError:
+            missing.append(pip_name)
+    return missing
+
+
+def _has_wakeword_models() -> bool:
+    """True if at least one .onnx wake word model is present in any known cache dir."""
+    import os as _os
+    candidates = []
+
+    try:
+        import openwakeword as _oww
+        candidates.append(
+            _os.path.join(_os.path.dirname(_oww.__file__), "resources", "models")
+        )
+    except ImportError:
+        pass
+
+    home = _os.path.expanduser("~")
+    candidates += [
+        _os.path.join(home, "Library", "Caches", "openwakeword"),           # macOS
+        _os.path.join(_os.getenv("XDG_CACHE_HOME", _os.path.join(home, ".cache")), "openwakeword"),  # Linux
+    ]
+    if sys.platform == "win32":
+        local = _os.getenv("LOCALAPPDATA", "")
+        if local:
+            candidates.append(_os.path.join(local, "openwakeword"))
+
+    for path in candidates:
+        if _os.path.isdir(path):
+            try:
+                if any(f.endswith(".onnx") for f in _os.listdir(path)):
+                    return True
+            except OSError:
+                pass
+    return False
+
+
+def _request_mic_permission_macos() -> None:
+    """
+    On macOS 14+, opening a PyAudio stream triggers the mic permission dialog.
+    We do a quick probe open/close so the dialog appears BEFORE the session starts,
+    giving the user time to approve before openwakeword starts listening.
+    """
+    try:
+        import pyaudio
+        pa = pyaudio.PyAudio()
+        stream = pa.open(
+            format=pyaudio.paInt16,
+            channels=1,
+            rate=16000,
+            input=True,
+            frames_per_buffer=480,
+        )
+        stream.stop_stream()
+        stream.close()
+        pa.terminate()
+    except Exception:
+        pass  # If it fails here the real session will handle the error
+
+
 # ── Session controller ─────────────────────────────────────────────────────────
 
 class _TrayController:
@@ -271,13 +377,50 @@ class _TrayController:
 
         self._running = True
         icon.icon = _load_icon_file(active=True)
-        self._notify("Iniciando… Decí 'Hey Jarvis' para comenzar")
+        icon.update_menu()
 
         def _run() -> None:
             try:
+                _speak("Iniciando Jarvis.")
+
+                # ── 1. Load config ────────────────────────────────────────────
                 from dotenv import load_dotenv
                 load_dotenv(_env_path(), override=True)
-                backend = os.getenv("ACTIVE_BRAIN_ENGINE", "gemini").lower()
+
+                # ── 2. Pre-flight: check required packages ────────────────────
+                missing = _check_required_packages()
+                if missing:
+                    msg = f"Faltan los paquetes {', '.join(missing)}. Revisá la instalación."
+                    _speak(msg)
+                    self._notify(msg)
+                    logger.error("[Tray] Paquetes faltantes: %s", missing)
+                    return
+
+                # ── 3. Wake word models ───────────────────────────────────────
+                if not _has_wakeword_models():
+                    _speak("Descargando los modelos de reconocimiento de voz. Esto solo ocurre una vez.")
+                    self._notify("Descargando modelos de voz…")
+                    logger.info("[Tray] Descargando modelos de wake word...")
+                    try:
+                        from openwakeword.utils import download_models
+                        download_models()
+                        _speak("Modelos instalados correctamente.")
+                    except Exception as exc:
+                        msg = "No pude descargar los modelos. Verificá tu conexión a internet."
+                        _speak(msg)
+                        self._notify(msg)
+                        logger.warning("[Tray] Error descargando modelos: %s", exc)
+                        return
+
+                # ── 4. Microphone permission (macOS) ──────────────────────────
+                if sys.platform == "darwin":
+                    _request_mic_permission_macos()
+
+                # ── 5. Start voice session ────────────────────────────────────
+                backend = os.getenv("ACTIVE_BRAIN_ENGINE", "claude").lower()
+                _speak("Sistema listo. Decí Hey Jarvis para comenzar.")
+                self._notify("Escuchando… Decí 'Hey Jarvis'")
+
                 if backend == "claude":
                     from core.session.jarvis_api_session import JarvisAPISession
                     self._session = JarvisAPISession()
@@ -285,9 +428,17 @@ class _TrayController:
                 else:
                     from core.server import jarvis_daemon
                     jarvis_daemon.main()
+
+            except ModuleNotFoundError as exc:
+                msg = f"Falta el módulo {exc.name}. Reinstalá la aplicación."
+                _speak(msg)
+                self._notify(msg)
+                logger.error("[Tray] Módulo faltante: %s", exc)
             except Exception as exc:
+                msg = f"Ocurrió un error: {exc}"
+                _speak(msg)
+                self._notify(str(exc))
                 logger.error("[Tray] Error en sesión: %s", exc)
-                self._notify(f"Error: {exc}")
             finally:
                 self._running = False
                 self._session = None
@@ -297,7 +448,6 @@ class _TrayController:
 
         self._thread = threading.Thread(target=_run, daemon=True, name="jarvis-session")
         self._thread.start()
-        icon.update_menu()
 
     def stop_voice(self, icon: pystray.Icon, item: pystray.MenuItem) -> None:
         if not self._running:

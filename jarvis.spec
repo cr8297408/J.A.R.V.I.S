@@ -86,6 +86,18 @@ _env_example = ".env.example"
 if os.path.exists(_env_example):
     datas.append((_env_example, "."))
 
+# Bundle openwakeword models (.onnx) so the app works offline on first launch
+try:
+    import openwakeword as _oww
+    _oww_resources = os.path.join(os.path.dirname(_oww.__file__), "resources")
+    if os.path.isdir(_oww_resources):
+        datas.append((_oww_resources, os.path.join("openwakeword", "resources")))
+        print(f"[spec] Bundling openwakeword resources from {_oww_resources}")
+    else:
+        print("[spec] WARNING: openwakeword resources dir not found — models won't be bundled")
+except ImportError:
+    print("[spec] WARNING: openwakeword not installed — skipping model bundling")
+
 
 # ── Icon paths ─────────────────────────────────────────────────────────────────
 
