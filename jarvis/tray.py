@@ -297,6 +297,14 @@ def _has_wakeword_models() -> bool:
     import os as _os
     candidates = []
 
+    # PyInstaller frozen context: models are bundled under _MEIPASS
+    if getattr(sys, "frozen", False) and hasattr(sys, "_MEIPASS"):
+        meipass = sys._MEIPASS
+        candidates += [
+            _os.path.join(meipass, "openwakeword", "resources", "models"),
+            _os.path.join(meipass, "openwakeword", "resources"),
+        ]
+
     try:
         import openwakeword as _oww
         candidates.append(
