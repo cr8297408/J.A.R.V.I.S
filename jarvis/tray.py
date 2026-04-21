@@ -287,7 +287,7 @@ def _check_required_packages() -> list[str]:
     for module, pip_name in _REQUIRED_PACKAGES:
         try:
             __import__(module)
-        except ImportError:
+        except (ImportError, Exception):
             missing.append(pip_name)
     return missing
 
@@ -387,14 +387,16 @@ class _TrayController:
                 from dotenv import load_dotenv
                 load_dotenv(_env_path(), override=True)
 
-                # ── 2. Pre-flight: check required packages ────────────────────
-                missing = _check_required_packages()
-                if missing:
-                    msg = f"Faltan los paquetes {', '.join(missing)}. Revisá la instalación."
-                    _speak(msg)
-                    self._notify(msg)
-                    logger.error("[Tray] Paquetes faltantes: %s", missing)
-                    return
+                # ── 2. Pre-flight: check required packages (dev mode only) ───
+                # In a frozen/bundled app all packages are included — skip.
+                if not _FROZEN:
+                    missing = _check_required_packages()
+                    if missing:
+                        msg = f"Faltan los paquetes {', '.join(missing)}. Revisá la instalación."
+                        _speak(msg)
+                        self._notify(msg)
+                        logger.error("[Tray] Paquetes faltantes: %s", missing)
+                        return
 
                 # ── 3. Wake word models ───────────────────────────────────────
                 if not _has_wakeword_models():

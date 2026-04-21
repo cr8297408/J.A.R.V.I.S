@@ -14,5 +14,6 @@ numpy
 python-dotenv
 edge-tts>=7.2.7
 openwakeword
+onnxruntime
 pynput
 faster-whisper
