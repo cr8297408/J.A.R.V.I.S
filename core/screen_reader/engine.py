@@ -190,20 +190,11 @@ def create_screen_reader(
         logger.info("ScreenReaderEngine: backend Windows (UI Automation)")
 
     else:
-        # Linux: fallback a Vision únicamente por ahora
-        # TODO: implementar LinuxBackend con pyatspi
-        from .backends.base import ScreenReaderBackend as _Base
-
-        class _NullBackend(_Base):
-            def is_available(self) -> bool: return False
-            async def read_active_window(self) -> str: return ""
-            async def read_focused_element(self) -> str: return ""
-            async def navigate(self, direction: str) -> str: return ""
-            async def click_element(self, description: str) -> bool: return False
-            async def type_text(self, text: str) -> None: pass
-            async def get_ui_tree(self) -> dict: return {}
-
-        backend = _NullBackend()
-        logger.warning("ScreenReaderEngine: Linux sin backend nativo — solo Vision fallback")
+        from .backends.linux import LinuxScreenReaderBackend
+        backend = LinuxScreenReaderBackend()
+        if backend.is_available():
+            logger.info("ScreenReaderEngine: backend Linux (AT-SPI via pyatspi)")
+        else:
+            logger.warning("ScreenReaderEngine: pyatspi no instalado — solo Vision fallback. Instalá: pip install pyatspi")
 
     return ScreenReaderEngine(backend=backend, vision_adapter=vision_adapter)
