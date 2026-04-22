@@ -1,16 +1,33 @@
-anthropic>=0.40.0
+# ── Core ──────────────────────────────────────────────────────────────────────
 click>=8.1
+python-dotenv
 pyaudio
 webrtcvad
-setuptools
 numpy
-google-generativeai
-groq
-openai
-python-dotenv
-edge-tts>=7.2.7
 fastapi
 uvicorn
-stripe
+setuptools
+
+# ── STT / Wake word ───────────────────────────────────────────────────────────
 openwakeword
 mlx-whisper
+
+# ── TTS ───────────────────────────────────────────────────────────────────────
+edge-tts>=7.2.7
+
+# ── LLM local (cliente HTTP compatible con Ollama) ────────────────────────────
+# NO usa la API de OpenAI — apunta a localhost:11434
+openai>=1.0.0
+
+# ── Screen Reader & PC Control ────────────────────────────────────────────────
+pyautogui
+Pillow
+
+# ── Plataforma (instalar solo lo que corresponde al SO) ───────────────────────
+# Windows:  pip install pywinauto pygetwindow
+# macOS:    pip install pyobjc-framework-Cocoa pyobjc-framework-ApplicationServices
+# Linux:    pip install pyatspi
+
+# ── OpenCode (agente de coding) se instala como binario externo ───────────────
+# macOS/Linux: brew install sst/tap/opencode
+# Windows/Linux: ver github.com/sst/opencode/releases

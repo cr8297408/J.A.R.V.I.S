@@ -2,12 +2,9 @@ pyinstaller
 pystray
 Pillow
 click
-# LLM backends
-anthropic>=0.40.0
-google-generativeai
-groq
-openai
-# Audio pipeline
+# ── LLM local (Ollama — sin API keys, sin costo) ──────────────────────────────
+openai>=1.0.0
+# ── Audio pipeline ────────────────────────────────────────────────────────────
 pyaudio
 webrtcvad
 numpy
@@ -17,3 +14,7 @@ openwakeword
 onnxruntime
 pynput
 faster-whisper
+# ── Screen Reader & PC Control ────────────────────────────────────────────────
+pyautogui
+# macOS:   pyobjc-framework-Cocoa pyobjc-framework-ApplicationServices
+# Windows: pywinauto pygetwindow
