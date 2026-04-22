@@ -101,14 +101,7 @@ _ok "Python $PY_VERSION"
 _step 3 "Instalando Ollama (servidor LLM local)..."
 
 if ! command -v ollama &> /dev/null; then
-    if [ "$OS" = "Darwin" ]; then
-        brew install ollama 2>/dev/null || {
-            _warn "Instalando Ollama via curl..."
-            curl -fsSL https://ollama.com/install.sh | sh
-        }
-    else
-        curl -fsSL https://ollama.com/install.sh | sh
-    fi
+    curl -fsSL https://ollama.com/install.sh | sh
     _ok "Ollama instalado"
 else
     _ok "Ollama ya instalado ($(ollama --version 2>/dev/null || echo 'versión desconocida'))"

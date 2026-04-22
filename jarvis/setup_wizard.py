@@ -96,51 +96,7 @@ def _install_ollama(log_fn) -> bool:
     log_fn("Descargando instalador de Ollama...")
     try:
         if sys.platform == "darwin":
-            # Opción 1: Homebrew (preferido — maneja firma y notarización)
-            if shutil.which("brew"):
-                log_fn("Instalando Ollama via Homebrew...")
-                r = subprocess.run(
-                    ["brew", "install", "ollama"],
-                    capture_output=True, text=True
-                )
-                if r.returncode == 0:
-                    log_fn("✓ Ollama instalado via Homebrew")
-                    return True
-
-            # Opción 2: .pkg oficial firmado y notarizado por Ollama
-            # El .zip descargado programáticamente queda en cuarentena por Gatekeeper
-            # y macOS lo bloquea con "está dañado". El .pkg evita ese problema.
-            log_fn("Descargando instalador oficial de Ollama (.pkg)...")
-            pkg_url = "https://ollama.com/download/Ollama.pkg"
-            tmp_pkg = "/tmp/Ollama.pkg"
-            urllib.request.urlretrieve(pkg_url, tmp_pkg)
-
-            log_fn("Instalando Ollama.pkg (puede pedir contraseña)...")
-            r = subprocess.run(
-                ["sudo", "installer", "-pkg", tmp_pkg, "-target", "/"],
-                capture_output=True, text=True
-            )
-            if r.returncode == 0:
-                log_fn("✓ Ollama instalado via pkg")
-                # Abrir Ollama para que arranque el menu bar helper
-                subprocess.Popen(["open", "-a", "Ollama"])
-                import time; time.sleep(3)
-                return _ollama_installed() or _ollama_running()
-
-            log_fn(f"✗ installer falló: {r.stderr[-200:]}")
-            return False
-
-        elif sys.platform == "win32":
-            url = "https://ollama.com/download/OllamaSetup.exe"
-            tmp = os.path.join(os.environ.get("TEMP", "C:\\Temp"), "OllamaSetup.exe")
-            log_fn("Descargando OllamaSetup.exe...")
-            urllib.request.urlretrieve(url, tmp)
-            log_fn("Ejecutando instalador de Ollama (puede pedir permisos)...")
-            subprocess.run([tmp, "/silent"], check=True)
-            return _ollama_installed()
-
-        else:  # Linux
-            log_fn("Instalando Ollama via curl...")
+            log_fn("Instalando Ollama via script oficial...")
             r = subprocess.run(
                 ["bash", "-c", "curl -fsSL https://ollama.com/install.sh | sh"],
                 capture_output=True, text=True
@@ -148,7 +104,31 @@ def _install_ollama(log_fn) -> bool:
             if r.returncode == 0:
                 log_fn("✓ Ollama instalado")
                 return True
-            log_fn(f"Error: {r.stderr[-200:]}")
+            log_fn(f"✗ Error: {r.stderr[-200:]}")
+            return False
+
+        elif sys.platform == "win32":
+            log_fn("Instalando Ollama via PowerShell...")
+            r = subprocess.run(
+                ["powershell", "-Command", "irm https://ollama.com/install.ps1 | iex"],
+                capture_output=True, text=True
+            )
+            if r.returncode == 0:
+                log_fn("✓ Ollama instalado")
+                return True
+            log_fn(f"✗ Error: {r.stderr[-200:]}")
+            return False
+
+        else:  # Linux
+            log_fn("Instalando Ollama via script oficial...")
+            r = subprocess.run(
+                ["bash", "-c", "curl -fsSL https://ollama.com/install.sh | sh"],
+                capture_output=True, text=True
+            )
+            if r.returncode == 0:
+                log_fn("✓ Ollama instalado")
+                return True
+            log_fn(f"✗ Error: {r.stderr[-200:]}")
             return False
 
     except Exception as e:
