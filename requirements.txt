@@ -19,9 +19,12 @@ edge-tts>=7.2.7
 # NO usa la API de OpenAI — apunta a localhost:11434
 openai>=1.0.0
 
+# ── Desktop app (system tray) ─────────────────────────────────────────────────
+pystray
+Pillow
+
 # ── Screen Reader & PC Control ────────────────────────────────────────────────
 pyautogui
-Pillow
 
 # ── Plataforma (instalar solo lo que corresponde al SO) ───────────────────────
 # Windows:  pip install pywinauto pygetwindow
