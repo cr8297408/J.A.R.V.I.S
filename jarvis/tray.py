@@ -427,17 +427,11 @@ class _TrayController:
                     _request_mic_permission_macos()
 
                 # ── 5. Start voice session ────────────────────────────────────
-                backend = os.getenv("ACTIVE_BRAIN_ENGINE", "claude").lower()
                 _speak("Sistema listo. Decí Hey Jarvis para comenzar.")
                 self._notify("Escuchando… Decí 'Hey Jarvis'")
 
-                if backend == "claude":
-                    from core.session.jarvis_api_session import JarvisAPISession
-                    self._session = JarvisAPISession()
-                    self._session.run()
-                else:
-                    from core.server import jarvis_daemon
-                    jarvis_daemon.main()
+                from core.server import jarvis_daemon
+                jarvis_daemon.main()
 
             except ModuleNotFoundError as exc:
                 msg = f"Falta el módulo {exc.name}. Reinstalá la aplicación."
@@ -493,12 +487,14 @@ class _TrayController:
         if not os.path.exists(target):
             with open(target, "w") as f:
                 f.write(
-                    "# J.A.R.V.I.S Configuration\n"
-                    "# Fill in your API keys and save the file.\n\n"
-                    "ACTIVE_BRAIN_ENGINE=claude\n"
-                    "ANTHROPIC_API_KEY=\n"
-                    "GEMINI_API_KEY=\n"
-                    "GROQ_API_KEY=\n"
+                    "# J.A.R.V.I.S — Configuración\n"
+                    "# Sin API keys necesarias. Todo corre localmente.\n\n"
+                    "OLLAMA_HOST=http://localhost:11434\n"
+                    "JARVIS_GENERAL_MODEL=gemma4:latest\n"
+                    "JARVIS_PC_MODEL=gemma4:latest\n"
+                    "JARVIS_CODE_MODEL=qwen2.5-coder:latest\n"
+                    "ACTIVE_TTS_ENGINE=edge_tts\n"
+                    "ACTIVE_STT_ENGINE=mlx_whisper\n"
                 )
 
         try:
@@ -553,6 +549,21 @@ def run_tray() -> None:
     """Launch J.A.R.V.I.S as a system tray application. No terminal needed."""
     # On first bundled run, copy .env template to the user config dir
     _ensure_env_exists()
+
+    # ── First-run setup wizard ─────────────────────────────────────────────────
+    from jarvis.setup_wizard import is_first_run, run_setup_wizard
+    if is_first_run():
+        # run_setup_wizard blocks until the user completes or skips.
+        # We pass a callback so the tray starts after the wizard closes.
+        _tray_started = threading.Event()
+
+        def _after_setup():
+            _tray_started.set()
+
+        run_setup_wizard(on_complete=_after_setup)
+        # If the user closed the wizard without completing, wait anyway — the
+        # setup_wizard already marks done on skip so we won't loop.
+        _tray_started.wait(timeout=0)  # non-blocking: just proceed
 
     # Load .env from the correct location (user config dir when bundled, project root in dev)
     try:
