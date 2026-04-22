@@ -1,7 +1,22 @@
 # Plan: Jarvis 100% Local con Gemma 4 — Cero APIs externas, acceso universal
 
-> **Estado actual**: 4 proveedores externos pagos (Gemini API, Groq, OpenRouter, Anthropic/Claude)
-> **Estado objetivo**: Ollama + Gemma 4 + Accessibility API + OpenCode — gratis, offline, sin API keys, para todos
+> **Estado actual**: ✅ Migración completa — 0 proveedores externos
+> **Rama**: `feat/gemma4-local-universal`
+>
+> | Fase | Estado |
+> |---|---|
+> | F0 — Verificación de Gemma 4 en Ollama | 🔲 Pendiente (verificar en runtime) |
+> | F1 — OllamaAdapter | ✅ Implementado — `adapters/llm/ollama_adapter.py` |
+> | F2 — Screen Reader Engine (macOS) | ✅ Implementado — `core/screen_reader/backends/macos.py` |
+> | F2 — Screen Reader Engine (Windows) | ✅ Implementado — `core/screen_reader/backends/windows.py` |
+> | F2 — Screen Reader Engine (Linux AT-SPI) | ✅ Implementado — `core/screen_reader/backends/linux.py` |
+> | F2 — Vision fallback (Gemma 4 + screenshot) | ✅ Implementado — `core/screen_reader/vision_fallback.py` |
+> | F3 — Tool Dispatch (registry + dispatcher) | ✅ Implementado — `core/tool_dispatch/` |
+> | F4 — OpenCodePtySession (modo coding) | ✅ Implementado — `core/session/opencode_pty_session.py` |
+> | F5 — IntentRouter + ModeState | ✅ Implementado — `core/intent_router.py` |
+> | F6 — Migración daemon + main + CLI | ✅ Implementado — `jarvis_daemon.py`, `main.py`, `jarvis/cli.py` |
+> | F7 — Script de instalación | ✅ Reescrito — `install.sh` (Ollama + OpenCode + modelos) |
+> | F8 — Fine-tuning con Unsloth | 🔲 Opcional — solo cuando haya 500+ ejemplos reales |
 
 ---
 
@@ -560,7 +575,9 @@ Antes de implementar, hay que conocer lo que ya existe y se puede reutilizar:
 
 ### Fase 0 — Verificación de Gemma 4 en Ollama
 
-Antes de escribir código, confirmar que Gemma 4 vía Ollama soporta:
+> 🔲 **Pendiente** — Verificar en runtime contra Ollama real
+
+Antes de poner en producción, confirmar que Gemma 4 vía Ollama soporta:
 
 - [ ] JSON mode / structured output — necesario para el schema actual de respuestas
 - [ ] Function calling / tool use — necesario para el tool dispatch
@@ -582,9 +599,9 @@ Antes de escribir código, confirmar que Gemma 4 vía Ollama soporta:
 
 ---
 
-### Fase 1 — OllamaAdapter (reemplaza los 4 adaptadores externos)
+### ✅ Fase 1 — OllamaAdapter (reemplaza los 4 adaptadores externos)
 
-**Archivo nuevo**: `adapters/llm/ollama_adapter.py`
+**Archivo**: `adapters/llm/ollama_adapter.py`
 
 Implementa la misma interfaz que los adaptadores actuales para que la migración sea drop-in:
 
@@ -610,9 +627,9 @@ brain_general = OllamaAdapter(model=os.getenv("JARVIS_GENERAL_MODEL", "gemma4:la
 
 ---
 
-### Fase 2 — Screen Reader Engine
+### ✅ Fase 2 — Screen Reader Engine
 
-**Directorio nuevo**: `core/screen_reader/`
+**Directorio**: `core/screen_reader/`
 
 ```
 core/screen_reader/
@@ -637,9 +654,9 @@ core/screen_reader/
 
 ---
 
-### Fase 3 — Tool Dispatch
+### ✅ Fase 3 — Tool Dispatch
 
-**Directorio nuevo**: `core/tool_dispatch/`
+**Directorio**: `core/tool_dispatch/`
 
 ```
 core/tool_dispatch/
@@ -666,9 +683,9 @@ Gemma 4 → tool_call: {"name": "type_text", "args": {"text": "hola mundo"}}
 
 ---
 
-### Fase 4 — Modo Coding: OpenCodePtySession
+### ✅ Fase 4 — Modo Coding: OpenCodePtySession
 
-**Archivo nuevo**: `core/session/opencode_pty_session.py`
+**Archivo**: `core/session/opencode_pty_session.py`
 
 Migración casi directa desde `claude_code_pty_session.py`:
 - Cambiar `["claude"]` → `["opencode"]` en `PtyCLIWrapper`
@@ -679,18 +696,18 @@ El `PtyCLIWrapper`, `GhostTyper`, `StreamingLexer` y TTS se reutilizan sin cambi
 
 ---
 
-### Fase 5 — Intent Router + ModeState
+### ✅ Fase 5 — Intent Router + ModeState
 
-**Archivo nuevo**: `core/intent_router.py`
+**Archivo**: `core/intent_router.py`
 
 Tres etapas en cascada: keywords de coding → keywords de PC → fallback general.
 Incluye `ModeState` para activación manual de modo por voz.
 
 ---
 
-### Fase 6 — Migración del daemon y eliminación de dependencias externas
+### ✅ Fase 6 — Migración del daemon y eliminación de dependencias externas
 
-**Cambios en `core/server/jarvis_daemon.py` y `main.py`**:
+**Archivos actualizados**: `core/server/jarvis_daemon.py`, `main.py`, `jarvis/cli.py`
 - Reemplazar instanciación de `GeminiSummarizer` / `GroqSummarizer` / etc. por `OllamaAdapter`
 - Inyectar `ScreenReaderEngine` en el loop principal
 - Inyectar `ToolDispatcher`
@@ -752,7 +769,9 @@ JARVIS_CODE_MODEL=qwen2.5-coder:latest   # modo coding (o gemma4 si se prefiere 
 
 ---
 
-### Fase 7 — Script de instalación para el usuario final
+### ✅ Fase 7 — Script de instalación para el usuario final
+
+> Reescrito en `install.sh` — instala Ollama, descarga modelos, instala OpenCode, configura entorno Python.
 
 El usuario nuevo ejecuta esto una sola vez:
 
@@ -789,7 +808,7 @@ jarvis start
 
 ---
 
-### Fase 7 (Opcional) — Fine-tuning de Gemma 4
+### 🔲 Fase 8 (Opcional) — Fine-tuning de Gemma 4
 
 **Solo cuando haya 500+ ejemplos reales de uso corregidos.**
 
@@ -819,20 +838,22 @@ Permite fine-tunear Gemma 4 12B en una RTX 4090 (24GB VRAM). Sin Unsloth necesit
 
 ---
 
-## Orden de ejecución recomendado
+## Orden de ejecución — Estado
 
-| # | Fase | Tarea | Complejidad | Impacto | Desbloquea |
-|---|---|---|---|---|---|
-| 1 | F1 | `OllamaAdapter` — reemplaza los 4 adaptadores externos | Baja | Alto | Todo lo demás |
-| 2 | F6 | Migrar daemon + eliminar deps externas | Baja | Alto | Jarvis funciona 100% local |
-| 3 | F4 | `OpenCodePtySession` — modo coding con OpenCode | Baja | Muy alto | Coding por voz sin API keys |
-| 4 | F5 | `IntentRouter` + `ModeState` — tres modos | Baja | Alto | Routing automático |
-| 5 | F2 | `ScreenReaderEngine` — backend Windows (pywinauto) | Media | Muy alto | Control universal de PC en Win |
-| 6 | F3 | `ToolDispatcher` + registry de herramientas | Media | Muy alto | Ejecución de comandos de voz |
-| 7 | F2 | Backend Mac (NSAccessibility) | Media | Alto | Control de PC en Mac |
-| 8 | F2 | Vision fallback (Gemma 4 + screenshot) | Baja | Alto | Cobertura total de apps |
-| 9 | F7 | Script de instalación + docs para usuario final | Baja | Muy alto | Usuarios sin conocimiento técnico |
-| 10 | F8 | Fine-tuning con Unsloth | Muy alta | Medio | Precisión + velocidad mejoradas |
+| # | Fase | Tarea | Estado |
+|---|---|---|---|
+| 1 | F1 | `OllamaAdapter` — reemplaza los 4 adaptadores externos | ✅ Hecho |
+| 2 | F6 | Migrar daemon + eliminar deps externas | ✅ Hecho |
+| 3 | F4 | `OpenCodePtySession` — modo coding con OpenCode | ✅ Hecho |
+| 4 | F5 | `IntentRouter` + `ModeState` — tres modos | ✅ Hecho |
+| 5 | F2 | `ScreenReaderEngine` — macOS (NSAccessibility) | ✅ Hecho |
+| 6 | F2 | `ScreenReaderEngine` — Windows (UI Automation) | ✅ Hecho |
+| 7 | F2 | `ScreenReaderEngine` — Linux (AT-SPI pyatspi) | ✅ Hecho |
+| 8 | F2 | Vision fallback (Gemma 4 + screenshot) | ✅ Hecho |
+| 9 | F3 | `ToolDispatcher` + registry de herramientas | ✅ Hecho |
+| 10 | F7 | Script de instalación para usuario final | ✅ Hecho |
+| 11 | F0 | Verificación runtime Gemma 4 function calling + vision | 🔲 Pendiente |
+| 12 | F8 | Fine-tuning con Unsloth | 🔲 Opcional |
 
 ---
 
