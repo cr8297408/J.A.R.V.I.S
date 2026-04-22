@@ -1,64 +1,36 @@
 """
 J.A.R.V.I.S. CLI — Entry point principal.
-Subcomandos: start, doctor, config
+
+Comandos:
+    jarvis start [--mode code|daemon]  Inicia el sistema de voz
+    jarvis doctor                      Verifica el estado del sistema
+    jarvis config                      Muestra la configuración actual
+    jarvis desktop                     Lanza como app de system tray
+
+Modos de start:
+    code   → OpenCode + Ollama (PTY). Para programar por voz. (default)
+    daemon → Daemon completo: GENERAL + PC CONTROL + notificaciones.
 """
 from __future__ import annotations
 
 import os
 import sys
+import shutil
 import click
 
-# Asegurar que el root del proyecto esté en el path
 PROJECT_ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 sys.path.insert(0, PROJECT_ROOT)
 
 
-# ─── Helpers de output ────────────────────────────────────────────────────────
+# ── Helpers de output ─────────────────────────────────────────────────────────
 
-def _ok(msg: str) -> None:
-    click.echo(click.style(f"  ✓ {msg}", fg="green"))
-
-
-def _warn(msg: str) -> None:
-    click.echo(click.style(f"  ⚠ {msg}", fg="yellow"))
-
-
-def _fail(msg: str) -> None:
-    click.echo(click.style(f"  ✗ {msg}", fg="red"))
-
-
-def _header(msg: str) -> None:
-    click.echo(click.style(f"\n{msg}", bold=True))
-
-
-# ─── Validación de entorno ────────────────────────────────────────────────────
-
-REQUIRED_VARS: dict[str, list[str]] = {
-    "gemini":  ["GEMINI_API_KEY"],
-    "claude":  ["ANTHROPIC_API_KEY"],
-    "groq":    ["GROQ_API_KEY"],
-}
-
-OPTIONAL_VARS = {
-    "OPENROUTER_API_KEY": "OpenRouter (backend alternativo)",
-}
-
-
-def _validate_env(backend: str) -> list[str]:
-    """
-    Valida las variables de entorno necesarias para el backend seleccionado.
-    Retorna lista de errores. Lista vacía = todo OK.
-    """
-    errors: list[str] = []
-    required = REQUIRED_VARS.get(backend, [])
-    for var in required:
-        if not os.getenv(var):
-            errors.append(f"Falta la variable de entorno: {var}")
-    return errors
+def _ok(msg: str)   -> None: click.echo(click.style(f"  ✓ {msg}", fg="green"))
+def _warn(msg: str) -> None: click.echo(click.style(f"  ⚠ {msg}", fg="yellow"))
+def _fail(msg: str) -> None: click.echo(click.style(f"  ✗ {msg}", fg="red"))
+def _header(msg: str) -> None: click.echo(click.style(f"\n{msg}", bold=True))
 
 
 def _load_dotenv() -> None:
-    """Carga .env si existe, silenciosamente."""
     try:
         from dotenv import load_dotenv
         env_path = os.path.join(PROJECT_ROOT, ".env")
@@ -68,115 +40,291 @@ def _load_dotenv() -> None:
         pass
 
 
-# ─── Grupo principal ──────────────────────────────────────────────────────────
+# ── Grupo principal ───────────────────────────────────────────────────────────
 
 @click.group()
-@click.version_option(version="0.1.0", prog_name="jarvis")
+@click.version_option(version="0.2.0", prog_name="jarvis")
 def main() -> None:
     """
-    J.A.R.V.I.S. — Voice-First Programming CLI.
+    J.A.R.V.I.S. — Asistente de voz 100% local con Gemma 4.
 
     \b
-    Comandos principales:
+    Sin API keys. Sin internet. Sin costo.
+    Todo corre en tu máquina vía Ollama.
+
+    \b
+    Comandos:
       jarvis start    Inicia el sistema de voz
       jarvis doctor   Verifica el estado del sistema
       jarvis config   Muestra la configuración actual
+      jarvis desktop  Lanza como app de escritorio (system tray)
     """
     pass
 
 
-# ─── jarvis start ─────────────────────────────────────────────────────────────
+# ── jarvis start ──────────────────────────────────────────────────────────────
 
 @main.command()
 @click.option(
-    "--backend",
-    type=click.Choice(["gemini", "claude", "groq"], case_sensitive=False),
-    default=None,
-    envvar="ACTIVE_BRAIN_ENGINE",
-    show_envvar=True,
-    help="Motor LLM a utilizar. Sobreescribe ACTIVE_BRAIN_ENGINE del .env.",
-)
-@click.option(
     "--mode",
-    type=click.Choice(["daemon", "pty"], case_sensitive=False),
-    default="daemon",
+    type=click.Choice(["code", "daemon"], case_sensitive=False),
+    default="code",
     show_default=True,
     help=(
-        "Modo de operación: "
-        "'daemon' usa el servidor TCP con hooks de Gemini CLI, "
-        "'pty' wrappea el CLI directamente en la terminal actual."
+        "code: OpenCode + Ollama via PTY — para programar por voz. "
+        "daemon: servidor completo con GENERAL + PC CONTROL."
     ),
 )
-@click.option(
-    "--cli",
-    "cli_tool",
-    type=click.Choice(["gemini", "claude-code"], case_sensitive=False),
-    default="gemini",
-    show_default=True,
-    help=(
-        "CLI a wrappear en modo PTY. "
-        "'gemini' usa Gemini CLI, "
-        "'claude-code' usa Claude Code CLI (`claude`)."
-    ),
-)
-def start(backend: str | None, mode: str, cli_tool: str) -> None:
-    """Inicia J.A.R.V.I.S. con el backend y modo seleccionados."""
+def start(mode: str) -> None:
+    """Inicia J.A.R.V.I.S."""
     _load_dotenv()
-
-    # Determinar backend efectivo (re-leemos después de cargar .env, porque Click
-    # parsea envvar antes de que _load_dotenv() corra)
-    effective_backend = (backend or os.getenv("ACTIVE_BRAIN_ENGINE", "gemini")).lower()
-
-    allowed_backends = set(REQUIRED_VARS.keys())
-    if effective_backend not in allowed_backends:
-        click.echo(click.style("\n[J.A.R.V.I.S] Error de configuración:\n", fg="red", bold=True))
-        _fail(
-            f"Backend inválido: '{effective_backend}'. "
-            f"Valores permitidos: {', '.join(sorted(allowed_backends))}."
-        )
-        click.echo(click.style(
-            "\nCorregí ACTIVE_BRAIN_ENGINE en .env o usá --backend.\n", fg="yellow"
-        ))
-        sys.exit(1)
-
-    # Validar env vars del backend seleccionado
-    errors = _validate_env(effective_backend)
-    if errors:
-        click.echo(click.style("\n[J.A.R.V.I.S] Error de configuración:\n", fg="red", bold=True))
-        for err in errors:
-            _fail(err)
-        click.echo(
-            click.style(
-                f"\nEditá el archivo .env y agregá la API key para el backend '{effective_backend}'.\n"
-                f"Podés copiarte el template: cp .env.example .env\n",
-                fg="yellow",
-            )
-        )
-        sys.exit(1)
-
-    # Inyectar backend en el entorno para que los módulos lo lean
-    os.environ["ACTIVE_BRAIN_ENGINE"] = effective_backend
-
-    # Descargar modelos si es la primera vez
     _ensure_models()
+    _check_ollama_running()
 
-    cli_label = f", cli: {cli_tool}" if mode == "pty" else ""
-    click.echo(
-        click.style(
-            f"\n[J.A.R.V.I.S] Iniciando — backend: {effective_backend.upper()}, modo: {mode}{cli_label}\n",
-            fg="cyan",
-            bold=True,
-        )
-    )
+    click.echo(click.style(
+        f"\n[J.A.R.V.I.S] Iniciando — modo: {mode.upper()}\n",
+        fg="cyan", bold=True,
+    ))
 
-    if mode == "pty":
-        _start_pty(cli_tool)
+    if mode == "code":
+        _start_coding()
     else:
         _start_daemon()
 
 
+def _start_coding() -> None:
+    """Lanza OpenCodePtySession — modo coding con OpenCode + Ollama."""
+    if not shutil.which("opencode"):
+        _warn(
+            "'opencode' no encontrado en el PATH.\n"
+            "  Instalá con: brew install sst/tap/opencode\n"
+            "  O descargá en: github.com/sst/opencode/releases"
+        )
+    try:
+        from core.session.opencode_pty_session import OpenCodePtySession
+        OpenCodePtySession().run()
+    except ImportError as e:
+        _fail(f"No se pudo cargar OpenCodePtySession: {e}")
+        sys.exit(1)
+
+
+def _start_daemon() -> None:
+    """Lanza el daemon con GENERAL + PC CONTROL + notificaciones."""
+    try:
+        from core.server import jarvis_daemon
+        jarvis_daemon.main()
+    except ImportError as e:
+        _fail(f"No se pudo cargar el daemon: {e}")
+        sys.exit(1)
+
+
+def _check_ollama_running() -> None:
+    """Avisa si Ollama no está corriendo — no bloquea el inicio."""
+    try:
+        import urllib.request
+        ollama_host = os.getenv("OLLAMA_HOST", "http://localhost:11434")
+        urllib.request.urlopen(f"{ollama_host}/api/tags", timeout=2)
+    except Exception:
+        click.echo(click.style(
+            "\n  ⚠ Ollama no parece estar corriendo. Inicialo con: ollama serve\n",
+            fg="yellow",
+        ))
+
+
+# ── jarvis doctor ─────────────────────────────────────────────────────────────
+
+@main.command()
+def doctor() -> None:
+    """Verifica que el entorno esté correctamente configurado."""
+    _load_dotenv()
+    click.echo(click.style("\n[J.A.R.V.I.S] Doctor — verificando el sistema...\n", bold=True))
+    all_ok = True
+
+    # ── Python ────────────────────────────────────────────────────────────────
+    _header("Python")
+    major, minor = sys.version_info[:2]
+    if sys.version_info >= (3, 10):
+        _ok(f"Python {major}.{minor}")
+    else:
+        _fail(f"Python {major}.{minor} — se requiere 3.10 o superior")
+        all_ok = False
+
+    # ── Ollama ────────────────────────────────────────────────────────────────
+    _header("Ollama (LLM local)")
+    ollama_host = os.getenv("OLLAMA_HOST", "http://localhost:11434")
+    try:
+        import urllib.request, json as _json
+        with urllib.request.urlopen(f"{ollama_host}/api/tags", timeout=3) as resp:
+            data = _json.loads(resp.read())
+            models = [m["name"] for m in data.get("models", [])]
+            _ok(f"Ollama corriendo en {ollama_host}")
+            if models:
+                _ok(f"Modelos disponibles: {', '.join(models[:5])}")
+            else:
+                _warn("No hay modelos descargados. Ejecutá: ollama pull gemma4")
+                all_ok = False
+    except Exception:
+        _fail(f"Ollama no está corriendo en {ollama_host}")
+        click.echo(click.style("     Inicialo con: ollama serve", fg="yellow"))
+        all_ok = False
+
+    # Verificar modelos específicos requeridos
+    general_model = os.getenv("JARVIS_GENERAL_MODEL", "gemma4:latest")
+    pc_model      = os.getenv("JARVIS_PC_MODEL",      "gemma4:latest")
+    code_model    = os.getenv("JARVIS_CODE_MODEL",    "qwen2.5-coder:latest")
+    for model_name, role in [(general_model, "GENERAL"), (pc_model, "PC"), (code_model, "CODING")]:
+        try:
+            import urllib.request, json as _json
+            base = model_name.split(":")[0]
+            with urllib.request.urlopen(f"{ollama_host}/api/tags", timeout=3) as resp:
+                data = _json.loads(resp.read())
+                installed = [m["name"] for m in data.get("models", [])]
+                if any(base in m for m in installed):
+                    _ok(f"Modelo {role}: {model_name}")
+                else:
+                    _warn(f"Modelo {role} no encontrado: {model_name} — ejecutá: ollama pull {base}")
+        except Exception:
+            _warn(f"No se pudo verificar el modelo {role}: {model_name}")
+
+    # ── OpenCode ──────────────────────────────────────────────────────────────
+    _header("OpenCode (agente de coding)")
+    path = shutil.which("opencode")
+    if path:
+        _ok(f"opencode encontrado en {path}")
+    else:
+        _warn("opencode no encontrado — instalá con: brew install sst/tap/opencode")
+
+    # ── Dependencias de Python ────────────────────────────────────────────────
+    _header("Dependencias de Python")
+    deps = {
+        "pyaudio":      "Audio I/O",
+        "webrtcvad":    "Voice Activity Detection",
+        "openwakeword": "Wake word detection",
+        "openai":       "Cliente HTTP para Ollama",
+        "dotenv":       "python-dotenv",
+        "edge_tts":     "Edge TTS",
+        "click":        "CLI framework",
+        "PIL":          "Pillow — screenshots",
+        "pyautogui":    "Control de teclado/mouse",
+    }
+    for module, desc in deps.items():
+        try:
+            __import__(module)
+            _ok(f"{module} — {desc}")
+        except ImportError:
+            _fail(f"{module} no instalado — {desc}")
+            all_ok = False
+
+    # Screen reader por plataforma
+    _header("Screen Reader (Accessibility API)")
+    if sys.platform == "darwin":
+        try:
+            import AppKit  # noqa: F401
+            _ok("pyobjc-framework-Cocoa — NSAccessibility (macOS)")
+        except ImportError:
+            _warn("pyobjc no instalado — instalá: pip install pyobjc-framework-Cocoa pyobjc-framework-ApplicationServices")
+    elif sys.platform == "win32":
+        try:
+            import pywinauto  # noqa: F401
+            _ok("pywinauto — UI Automation (Windows)")
+        except ImportError:
+            _warn("pywinauto no instalado — instalá: pip install pywinauto")
+
+    # ── Audio ─────────────────────────────────────────────────────────────────
+    _header("Dispositivos de audio")
+    try:
+        import pyaudio
+        pa = pyaudio.PyAudio()
+        inputs = [
+            pa.get_device_info_by_index(i)
+            for i in range(pa.get_device_count())
+            if pa.get_device_info_by_index(i)["maxInputChannels"] > 0
+        ]
+        pa.terminate()
+        if inputs:
+            _ok(f"{len(inputs)} micrófono(s) detectado(s)")
+            for dev in inputs[:3]:
+                click.echo(f"     • {dev['name']}")
+        else:
+            _fail("No se detectó ningún micrófono")
+            all_ok = False
+    except Exception as e:
+        _fail(f"Error al verificar audio: {e}")
+        all_ok = False
+
+    # ── Modelos de wake word ──────────────────────────────────────────────────
+    _header("Modelos de wake word")
+    _check_wakeword_models()
+
+    # ── Resultado ─────────────────────────────────────────────────────────────
+    click.echo()
+    if all_ok:
+        click.echo(click.style("✅  Sistema listo. Ejecutá: jarvis start\n", fg="green", bold=True))
+    else:
+        click.echo(click.style(
+            "❌  Hay problemas. Revisá los errores arriba.\n"
+            "    Primera vez: bash install.sh\n",
+            fg="red", bold=True,
+        ))
+        sys.exit(1)
+
+
+# ── jarvis config ─────────────────────────────────────────────────────────────
+
+@main.command("config")
+def show_config() -> None:
+    """Muestra la configuración activa del sistema."""
+    _load_dotenv()
+    click.echo(click.style("\n[J.A.R.V.I.S] Configuración activa\n", bold=True))
+
+    settings = {
+        "Ollama host":        os.getenv("OLLAMA_HOST",          "http://localhost:11434 (default)"),
+        "Modelo GENERAL":     os.getenv("JARVIS_GENERAL_MODEL", "gemma4:latest (default)"),
+        "Modelo PC CONTROL":  os.getenv("JARVIS_PC_MODEL",      "gemma4:latest (default)"),
+        "Modelo CODING":      os.getenv("JARVIS_CODE_MODEL",    "qwen2.5-coder:latest (default)"),
+        "Motor TTS":          os.getenv("ACTIVE_TTS_ENGINE",    "edge_tts (default)"),
+        "Motor STT":          os.getenv("ACTIVE_STT_ENGINE",    "mlx_whisper (default)"),
+        "Proyecto .env":      os.path.join(PROJECT_ROOT, ".env"),
+    }
+
+    max_len = max(len(k) for k in settings)
+    for key, value in settings.items():
+        click.echo(f"  {key:<{max_len}}  {click.style(str(value), fg='cyan')}")
+
+    click.echo()
+    click.echo(click.style(
+        "Para cambiar la configuración, editá el archivo .env del proyecto.\n"
+        "Template disponible en .env.example\n",
+        fg="yellow",
+    ))
+
+
+# ── jarvis desktop ────────────────────────────────────────────────────────────
+
+@main.command("desktop")
+def desktop_mode() -> None:
+    """
+    Lanza J.A.R.V.I.S como app de escritorio (system tray).
+
+    \b
+    No requiere terminal. Ícono en la barra del sistema.
+    Compatible con macOS, Windows y Linux.
+    """
+    try:
+        from jarvis.tray import run_tray
+    except ImportError as e:
+        _fail(f"No se pudo cargar el modo desktop: {e}")
+        click.echo(click.style(
+            "\nInstalá las dependencias:\n  pip install pystray Pillow\n",
+            fg="yellow",
+        ))
+        sys.exit(1)
+    run_tray()
+
+
+# ── Helpers ───────────────────────────────────────────────────────────────────
+
 def _wakeword_model_dirs() -> list[str]:
-    """Todas las ubicaciones donde openwakeword puede guardar modelos."""
     dirs: list[str] = []
     try:
         import openwakeword
@@ -184,18 +332,16 @@ def _wakeword_model_dirs() -> list[str]:
     except Exception:
         pass
     home = os.path.expanduser("~")
-    dirs.append(os.path.join(home, "Library", "Caches", "openwakeword"))  # macOS
-    dirs.append(os.path.join(os.getenv("XDG_CACHE_HOME", os.path.join(home, ".cache")), "openwakeword"))  # Linux
+    dirs.append(os.path.join(home, "Library", "Caches", "openwakeword"))
+    dirs.append(os.path.join(os.getenv("XDG_CACHE_HOME", os.path.join(home, ".cache")), "openwakeword"))
     local_app = os.getenv("LOCALAPPDATA")
     if local_app:
-        dirs.append(os.path.join(local_app, "openwakeword"))  # Windows
-    # Deduplicar conservando orden
+        dirs.append(os.path.join(local_app, "openwakeword"))
     seen: set[str] = set()
     return [d for d in dirs if not (os.path.normpath(d) in seen or seen.add(os.path.normpath(d)))]  # type: ignore[arg-type]
 
 
 def _has_wakeword_models() -> bool:
-    """True si existe al menos un .onnx en alguna ubicación conocida."""
     for path in _wakeword_model_dirs():
         if os.path.isdir(path):
             try:
@@ -207,10 +353,6 @@ def _has_wakeword_models() -> bool:
 
 
 def _ensure_models() -> None:
-    """
-    Verifica que los modelos de wake word estén descargados.
-    Si no están, los descarga automáticamente (solo ocurre la primera vez).
-    """
     try:
         if _has_wakeword_models():
             return
@@ -223,276 +365,22 @@ def _ensure_models() -> None:
         if _has_wakeword_models():
             click.echo(click.style("  ✓ Modelos descargados correctamente.\n", fg="green"))
         else:
-            _warn(f"Descarga completada pero modelos no encontrados. Rutas buscadas: {_wakeword_model_dirs()}")
+            _warn(f"Modelos no encontrados. Rutas buscadas: {_wakeword_model_dirs()}")
     except Exception as e:
         click.echo(click.style(f"\n  ⚠ No se pudieron descargar los modelos: {e}\n", fg="yellow"))
 
 
-def _start_pty(cli_tool: str = "gemini") -> None:
-    """
-    Inicia el modo PTY.
-    - 'gemini'      → main.py (Gemini CLI wrapper original)
-    - 'claude-code' → ClaudeCodePtySession (Claude Code CLI wrapper)
-    """
-    if cli_tool == "claude-code":
-        try:
-            import shutil
-            if not shutil.which("claude"):
-                _fail("Claude Code CLI no encontrado. Instalalo con: npm install -g @anthropic-ai/claude-code")
-                sys.exit(1)
-            from core.session.claude_code_pty_session import ClaudeCodePtySession
-            ClaudeCodePtySession().run()
-        except ImportError as e:
-            _fail(f"No se pudo cargar la sesión Claude Code PTY: {e}")
-            sys.exit(1)
-    else:
-        try:
-            import main as jarvis_main
-            jarvis_main.main()
-        except ImportError as e:
-            _fail(f"No se pudo cargar el modo PTY (Gemini): {e}")
-            sys.exit(1)
-
-
-def _start_daemon() -> None:
-    """
-    Inicia el modo de operación según el backend seleccionado.
-    - claude  → JarvisAPISession (streaming directo, sin PTY)
-    - gemini / groq → daemon TCP con hooks del CLI
-    """
-    backend = os.getenv("ACTIVE_BRAIN_ENGINE", "gemini").lower()
-
-    if backend == "claude":
-        try:
-            from core.session.jarvis_api_session import JarvisAPISession
-            session = JarvisAPISession()
-            session.run()
-        except ImportError as e:
-            _fail(f"No se pudo cargar la sesión Claude API: {e}")
-            sys.exit(1)
-    else:
-        try:
-            from core.server import jarvis_daemon
-            jarvis_daemon.main()
-        except ImportError as e:
-            _fail(f"No se pudo cargar el daemon: {e}")
-            sys.exit(1)
-
-
-# ─── jarvis doctor ────────────────────────────────────────────────────────────
-
-@main.command()
-@click.option(
-    "--backend",
-    type=click.Choice(["gemini", "claude", "groq"], case_sensitive=False),
-    default=None,
-    envvar="ACTIVE_BRAIN_ENGINE",
-    help="Backend a verificar (por defecto usa ACTIVE_BRAIN_ENGINE o 'gemini').",
-)
-def doctor(backend: str | None) -> None:
-    """Verifica que el entorno esté correctamente configurado."""
-    _load_dotenv()
-    effective_backend = (backend or os.getenv("ACTIVE_BRAIN_ENGINE", "gemini")).lower()
-
-    click.echo(click.style("\n[J.A.R.V.I.S] Doctor — verificando el sistema...\n", bold=True))
-    all_ok = True
-
-    # ── Python ────────────────────────────────────────────────────────────────
-    _header("Python")
-    major, minor = sys.version_info[:2]
-    if sys.version_info >= (3, 10):
-        _ok(f"Python {major}.{minor} (mínimo requerido: 3.10)")
-    else:
-        _fail(f"Python {major}.{minor} — se requiere 3.10 o superior")
-        all_ok = False
-
-    # ── Variables de entorno ──────────────────────────────────────────────────
-    _header(f"Variables de entorno (backend: {effective_backend.upper()})")
-    env_errors = _validate_env(effective_backend)
-    if env_errors:
-        for err in env_errors:
-            _fail(err)
-        all_ok = False
-    else:
-        required = REQUIRED_VARS.get(effective_backend, [])
-        for var in required:
-            _ok(f"{var} ✓")
-
-    for var, desc in OPTIONAL_VARS.items():
-        if os.getenv(var):
-            _ok(f"{var} ✓ ({desc})")
-        else:
-            _warn(f"{var} no configurado ({desc}) — opcional")
-
-    # ── Dependencias de Python ────────────────────────────────────────────────
-    _header("Dependencias de Python")
-
-    deps_to_check = {
-        "pyaudio":          "Audio I/O",
-        "webrtcvad":        "Voice Activity Detection",
-        "openwakeword":     "Wake word detection",
-        "mlx_whisper":      "STT local (Apple Silicon)",
-        "google.generativeai": "Gemini API",
-        "groq":             "Groq API",
-        "anthropic":        "Claude API",
-        "dotenv":           "python-dotenv",
-        "edge_tts":         "Edge TTS",
-        "click":            "CLI framework",
-    }
-
-    for module, desc in deps_to_check.items():
-        try:
-            import warnings
-            with warnings.catch_warnings():
-                warnings.simplefilter("ignore")
-                __import__(module)
-            _ok(f"{module} — {desc}")
-        except ImportError:
-            if module in ("anthropic",) and effective_backend != "claude":
-                _warn(f"{module} no instalado — {desc} (no requerido para backend '{effective_backend}')")
-            elif module in ("google.generativeai",) and effective_backend != "gemini":
-                _warn(f"{module} no instalado — {desc} (no requerido para backend '{effective_backend}')")
-            elif module in ("groq",) and effective_backend != "groq":
-                _warn(f"{module} no instalado — {desc} (no requerido para backend '{effective_backend}')")
-            else:
-                _fail(f"{module} no instalado — {desc}")
-                all_ok = False
-
-    # ── Audio ─────────────────────────────────────────────────────────────────
-    _header("Dispositivos de audio")
-    try:
-        import pyaudio
-        pa = pyaudio.PyAudio()
-        device_count = pa.get_device_count()
-        input_devices = [
-            pa.get_device_info_by_index(i)
-            for i in range(device_count)
-            if pa.get_device_info_by_index(i)["maxInputChannels"] > 0
-        ]
-        pa.terminate()
-        if input_devices:
-            _ok(f"{len(input_devices)} dispositivo(s) de entrada detectado(s)")
-            for dev in input_devices[:3]:
-                click.echo(f"     • {dev['name']}")
-        else:
-            _fail("No se detectó ningún micrófono")
-            all_ok = False
-    except Exception as e:
-        _fail(f"Error al verificar audio: {e}")
-        all_ok = False
-
-    # ── Herramientas del sistema ───────────────────────────────────────────────
-    _header("Herramientas del sistema")
-    import shutil
-    tools = {
-        "ffmpeg":  "Reproducción de audio (Edge TTS)",
-        "gemini":  "Gemini CLI (modo PTY/daemon)",
-    }
-    for tool, desc in tools.items():
-        path = shutil.which(tool)
-        if path:
-            _ok(f"{tool} encontrado en {path} — {desc}")
-        else:
-            if tool == "gemini" and effective_backend != "gemini":
-                _warn(f"{tool} no encontrado — {desc} (no requerido para backend '{effective_backend}')")
-            else:
-                _warn(f"{tool} no encontrado — {desc}")
-
-    # ── Modelos locales ───────────────────────────────────────────────────────
-    _header("Modelos locales")
-    _check_wakeword_models()
-
-    # ── Resultado final ───────────────────────────────────────────────────────
-    click.echo()
-    if all_ok:
-        click.echo(click.style("✅  Sistema listo. Podés ejecutar: jarvis start\n", fg="green", bold=True))
-    else:
-        click.echo(
-            click.style(
-                "❌  Hay problemas que resolver. Revisá los errores de arriba.\n"
-                "    Si es la primera vez, ejecutá: bash install.sh\n",
-                fg="red",
-                bold=True,
-            )
-        )
-        sys.exit(1)
-
-
 def _check_wakeword_models() -> None:
-    """Verifica que los modelos de wake word estén descargados (usa la misma lógica que _ensure_models)."""
     for path in _wakeword_model_dirs():
         if os.path.isdir(path):
             try:
                 models = [f for f in os.listdir(path) if f.endswith(".onnx")]
                 if models:
-                    _ok(f"Modelos wake word en {path} ({len(models)} archivos)")
+                    _ok(f"{len(models)} modelo(s) en {path}")
                     return
             except OSError:
                 continue
-    _warn("Modelos de wake word no encontrados — se descargarán automáticamente al hacer 'jarvis start'")
-
-
-# ─── jarvis config ────────────────────────────────────────────────────────────
-
-@main.command("config")
-def show_config() -> None:
-    """Muestra la configuración activa del sistema."""
-    _load_dotenv()
-
-    click.echo(click.style("\n[J.A.R.V.I.S] Configuración activa\n", bold=True))
-
-    settings = {
-        "Backend LLM":    os.getenv("ACTIVE_BRAIN_ENGINE", "gemini (default)"),
-        "Motor TTS":      os.getenv("ACTIVE_TTS_ENGINE",   "mac_say (default)"),
-        "Motor STT":      os.getenv("ACTIVE_STT_ENGINE",   "mlx_whisper (default)"),
-        "Gemini API Key": "✓ configurada" if os.getenv("GEMINI_API_KEY") else "✗ no configurada",
-        "Anthropic API":  "✓ configurada" if os.getenv("ANTHROPIC_API_KEY") else "✗ no configurada",
-        "Groq API Key":   "✓ configurada" if os.getenv("GROQ_API_KEY") else "✗ no configurada",
-        "Proyecto .env":  os.path.join(PROJECT_ROOT, ".env"),
-    }
-
-    max_len = max(len(k) for k in settings)
-    for key, value in settings.items():
-        color = "green" if "✓" in str(value) else ("red" if "✗" in str(value) else "white")
-        click.echo(f"  {key:<{max_len}}  {click.style(str(value), fg=color)}")
-
-    click.echo()
-    click.echo(
-        click.style(
-            "Para cambiar la configuración, editá el archivo .env del proyecto.\n",
-            fg="yellow",
-        )
-    )
-
-
-# ─── jarvis desktop ───────────────────────────────────────────────────────────
-
-@main.command("desktop")
-def desktop_mode() -> None:
-    """
-    Lanza J.A.R.V.I.S como app de escritorio (system tray).
-
-    \b
-    No requiere terminal. Aparece como ícono en la barra del sistema.
-    Compatible con macOS, Windows y Linux.
-
-    \b
-    Para personas con discapacidad: activá 'Iniciar con el sistema'
-    desde el menú del ícono para que Jarvis inicie automáticamente.
-    """
-    try:
-        from jarvis.tray import run_tray
-    except ImportError as e:
-        _fail(f"No se pudo cargar el modo desktop: {e}")
-        click.echo(
-            click.style(
-                "\nInstalá las dependencias de escritorio:\n"
-                "  pip install pystray Pillow\n",
-                fg="yellow",
-            )
-        )
-        sys.exit(1)
-    run_tray()
+    _warn("Modelos no encontrados — se descargarán automáticamente al hacer 'jarvis start'")
 
 
 if __name__ == "__main__":
