@@ -49,6 +49,15 @@ jarvis_speaking = threading.Event()
 user_context = {"last_command": "", "last_speech": "", "last_terminal_output": ""}
 
 
+def _set_state(s: str) -> None:
+    """Actualiza el DaemonState del panel de control si está disponible."""
+    try:
+        from jarvis.control_panel import daemon_state
+        daemon_state.value = s
+    except Exception:
+        pass
+
+
 def play_sfx(sound_name: str) -> None:
     """Reproduce feedback sonoro no bloqueante. Solo en macOS (afplay)."""
     if sys.platform != "darwin":
@@ -112,6 +121,7 @@ def start_vad_thread(
             )
 
             logging.info("Jarvis en Standby. Esperando 'Hey Jarvis'...")
+            _set_state("standby")
 
             # Variables de Estado
             state = "WAITING_WAKEWORD"
@@ -171,6 +181,7 @@ def start_vad_thread(
                                 play_sfx("wake")
 
                                 # 3. Cambiar de estado
+                                _set_state("listening")
                                 owwModel.reset()
                                 state = "RECORDING_COMMAND"
                                 recording_frames = []
@@ -218,6 +229,7 @@ def start_vad_thread(
                             )
                         else:
                             logging.info("Silencio detectado. Procesando comando...")
+                            _set_state("thinking")
 
                         play_sfx("stop")
                         state = "PROCESSING"

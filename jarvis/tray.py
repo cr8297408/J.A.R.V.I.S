@@ -366,6 +366,7 @@ class _TrayController:
         self._thread: threading.Thread | None = None
         self._running = False
         self._icon: pystray.Icon | None = None
+        self._panel = None  # Se asigna desde run_tray()
 
     # ── Notification ──────────────────────────────────────────────────────────
 
@@ -518,6 +519,10 @@ class _TrayController:
 
     # ── Menu ──────────────────────────────────────────────────────────────────
 
+    def open_panel(self, icon: pystray.Icon, item: pystray.MenuItem) -> None:
+        if self._panel:
+            self._panel.show()
+
     def build_menu(self) -> pystray.Menu:
         return pystray.Menu(
             pystray.MenuItem(
@@ -531,6 +536,8 @@ class _TrayController:
                 self.stop_voice,
                 enabled=lambda _: self._running,
             ),
+            pystray.Menu.SEPARATOR,
+            pystray.MenuItem("📊  Panel de control", self.open_panel),
             pystray.Menu.SEPARATOR,
             pystray.MenuItem(
                 "Iniciar con el sistema",
@@ -582,7 +589,25 @@ def run_tray() -> None:
         menu=ctrl.build_menu(),
     )
     ctrl._icon = icon
-    icon.run()
+
+    # ── Panel de control ───────────────────────────────────────────────────────
+    # El trigger de push-to-talk setea active_listening_requested del vad_listener.
+    def _push_to_talk():
+        try:
+            from core.audio.vad_listener import active_listening_requested
+            active_listening_requested.set()
+        except Exception as exc:
+            logger.warning("[Tray] push-to-talk error: %s", exc)
+
+    from jarvis.control_panel import ControlPanel
+    panel = ControlPanel(trigger_recording=_push_to_talk)
+    ctrl._panel = panel
+
+    # pystray corre en background — tkinter toma el hilo principal
+    icon.run_detached()
+    panel.show()       # Mostrar panel al arrancar
+    panel.mainloop()   # Bloquea hasta que el usuario cierre la ventana principal
+    icon.stop()
 
 
 if __name__ == "__main__":

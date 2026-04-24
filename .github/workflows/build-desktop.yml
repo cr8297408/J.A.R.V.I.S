@@ -62,13 +62,14 @@ jobs:
             libayatana-appindicator3-dev \
             ffmpeg \
             python3-dev \
+            python3-tk \
             gcc
 
       # ── macOS system deps ──────────────────────────────────────────────────
       - name: Install macOS system dependencies
         if: matrix.platform == 'mac'
         run: |
-          brew install portaudio ffmpeg create-dmg
+          brew install portaudio ffmpeg create-dmg python-tk@3.11
 
       # ── Windows system deps ────────────────────────────────────────────────
       - name: Install Windows system dependencies
@@ -227,7 +228,6 @@ jobs:
             | Plataforma | Archivo | Notas |
             |---|---|---|
             | macOS (Apple Silicon M1/M2/M3) | `JARVIS-macOS-arm64` | Requiere macOS 14+ |
-            | macOS (Intel) | `JARVIS-macOS-x86_64` | Requiere macOS 12+ |
             | Windows 10/11 | `JARVIS-Windows-x64.exe` | Doble clic para instalar |
             | Linux x64 | `JARVIS-Linux-x86_64.AppImage` | `chmod +x` y ejecutar |
 

@@ -108,8 +108,10 @@ def make_transcription_callback(loop: asyncio.AbstractEventLoop):
 
     async def _handle_general(text: str):
         """Modo GENERAL: stream_response → TTS."""
+        from jarvis.control_panel import daemon_state
         active_listening_requested.set()
         jarvis_speaking.set()
+        daemon_state.value = "speaking"
         try:
             async for chunk_type, content in brain_general.stream_response(text):
                 if interrupt_event.is_set():
@@ -119,6 +121,7 @@ def make_transcription_callback(loop: asyncio.AbstractEventLoop):
                     await asyncio.to_thread(tts.speak, content, interrupt_event)
         finally:
             jarvis_speaking.clear()
+            daemon_state.value = "standby"
 
     async def _handle_pc(text: str):
         """

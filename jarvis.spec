@@ -33,6 +33,7 @@ hidden = [
     # Core modules
     "jarvis.tray",
     "jarvis.cli",
+    "jarvis.control_panel",
     "core.platform_utils",
     "core.session.jarvis_api_session",
     "core.audio.vad_listener",
@@ -127,7 +128,7 @@ a = Analysis(
     hookspath=[],
     hooksconfig={},
     runtime_hooks=[],
-    excludes=["matplotlib", "tkinter", "PyQt5", "PyQt6", "wx", "unittest"],
+    excludes=["matplotlib", "PyQt5", "PyQt6", "wx", "unittest"],
     win_no_prefer_redirects=False,
     win_private_assemblies=False,
     cipher=block_cipher,
