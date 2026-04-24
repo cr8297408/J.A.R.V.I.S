@@ -27,7 +27,7 @@ logger = logging.getLogger(__name__)
 # ── Variables de entorno ──────────────────────────────────────────────────────
 OLLAMA_HOST   = os.getenv("OLLAMA_HOST",          "http://localhost:11434")
 GENERAL_MODEL = os.getenv("JARVIS_GENERAL_MODEL", "gemma4:latest")
-PC_MODEL      = os.getenv("JARVIS_PC_MODEL",      "gemma4:latest")
+PC_MODEL      = os.getenv("JARVIS_PC_MODEL",      "qwen2.5-coder:latest")
 CODE_MODEL    = os.getenv("JARVIS_CODE_MODEL",    "qwen2.5-coder:latest")
 
 # ── System prompts ────────────────────────────────────────────────────────────

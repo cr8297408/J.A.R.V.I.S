@@ -7,9 +7,12 @@ falling back to the best available adapter for the current OS/hardware.
 """
 from __future__ import annotations
 
+import logging
 import os
 import platform
 import sys
+
+logger = logging.getLogger(__name__)
 
 
 # ── Platform predicates ────────────────────────────────────────────────────────
@@ -38,9 +41,12 @@ def get_stt_class():
     Returns the STT class best suited for the current platform.
 
     Selection order:
-    1. ACTIVE_STT_ENGINE env var (explicit override)
-    2. mlx_whisper  — if Apple Silicon
-    3. faster_whisper — everywhere else (CPU int8 / CUDA float16)
+    1. ACTIVE_STT_ENGINE env var  (override explícito)
+    2. apple_speech  — macOS, si pyobjc-framework-Speech está instalado
+    3. mlx_whisper   — Apple Silicon, si apple_speech no está disponible
+    4. faster_whisper — Windows / Linux (CPU int8 / CUDA float16)
+
+    Valores válidos para ACTIVE_STT_ENGINE: apple_speech, mlx_whisper, faster_whisper
     """
     engine = _env("ACTIVE_STT_ENGINE")
 

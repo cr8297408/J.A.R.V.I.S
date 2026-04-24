@@ -6,6 +6,7 @@ build-backend = "setuptools.build_meta"
 name = "jarvis-voice-cli"
 version = "0.1.0"
 description = "J.A.R.V.I.S. — Voice-First Programming CLI"
+license = {text = "PolyForm Noncommercial License 1.0.0"}
 requires-python = ">=3.10"
 dependencies = [
     "click>=8.1",

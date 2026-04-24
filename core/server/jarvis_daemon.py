@@ -122,46 +122,79 @@ def make_transcription_callback(loop: asyncio.AbstractEventLoop):
 
     async def _handle_pc(text: str):
         """
-        Modo PC: enviar texto a gemma4:pc con function calling → ToolDispatcher.
-        gemma4:pc decide qué herramienta usar; el dispatcher la ejecuta.
+        Modo PC: enviar texto a qwen2.5-coder:pc con function calling → ToolDispatcher.
+        El modelo decide qué herramienta usar; el dispatcher la ejecuta.
         """
         try:
-            response = await brain_pc.client.chat.completions.create(
-                model=brain_pc.model,
-                messages=[
-                    {
-                        "role": "system",
-                        "content": (
-                            "Eres J.A.R.V.I.S., asistente de control de PC por voz para usuario con discapacidad visual. "
-                            "Analizás el comando del usuario y usás las herramientas disponibles para ejecutar la acción solicitada. "
-                            "Si el comando no requiere una herramienta (es solo una pregunta), respondé directamente. "
-                            "Siempre respondé de forma concisa y oral. Dirigite al usuario como 'Señor'."
-                        ),
-                    },
-                    {"role": "user", "content": text},
-                ],
-                tools=TOOLS,
-                tool_choice="auto",
-                temperature=0.1,
+            logging.info(f"[PC] Enviando a LLM con function calling: '{text[:60]}'")
+            response = await asyncio.wait_for(
+                brain_pc.client.chat.completions.create(
+                    model=brain_pc.model,
+                    messages=[
+                        {
+                            "role": "system",
+                            "content": (
+                                "Eres J.A.R.V.I.S., asistente de control de PC por voz para usuario con discapacidad visual. "
+                                "Analizás el comando del usuario y usás las herramientas disponibles para ejecutar la acción solicitada. "
+                                "Si el comando no requiere una herramienta (es solo una pregunta), respondé directamente. "
+                                "Siempre respondé de forma concisa y oral. Dirigite al usuario como 'Señor'."
+                            ),
+                        },
+                        {"role": "user", "content": text},
+                    ],
+                    tools=TOOLS,
+                    tool_choice="auto",
+                    temperature=0.1,
+                ),
+                timeout=60.0,
             )
+            logging.info(f"[PC] LLM respondió")
 
             message = response.choices[0].message
 
-            # Si Gemma quiere usar una herramienta
-            if message.tool_calls:
-                for tool_call in message.tool_calls:
-                    func = tool_call.function
-                    result = await dispatcher.execute_tool_call({
-                        "name": func.name,
-                        "arguments": func.arguments,
-                    })
+            # Algunos modelos en Ollama retornan el tool call como JSON en content
+            # en lugar de usar el campo tool_calls del protocolo OpenAI.
+            # Intentamos parsear content como fallback.
+            tool_calls = message.tool_calls
+            if not tool_calls and message.content:
+                try:
+                    # Algunos modelos envuelven el JSON en markdown fences (```json ... ```)
+                    raw = message.content.strip()
+                    if raw.startswith("```"):
+                        raw = raw.split("```", 2)[1]
+                        if raw.startswith("json"):
+                            raw = raw[4:]
+                        raw = raw.rsplit("```", 1)[0].strip()
+                    parsed = json.loads(raw)
+                    if isinstance(parsed, dict) and "name" in parsed:
+                        # Formato {"name": "...", "arguments": {...}}
+                        tool_calls = [parsed]
+                        logging.info(f"[PC] Tool call parseado desde content: {parsed['name']}")
+                except (json.JSONDecodeError, TypeError):
+                    pass
+
+            if tool_calls:
+                for tc in tool_calls:
+                    # Soporta tanto el formato OpenAI (objeto) como el dict parseado
+                    if isinstance(tc, dict):
+                        name = tc.get("name", "")
+                        args = tc.get("arguments", {})
+                        if isinstance(args, str):
+                            try:
+                                args = json.loads(args)
+                            except json.JSONDecodeError:
+                                args = {}
+                    else:
+                        name = tc.function.name
+                        args = tc.function.arguments
+                    result = await dispatcher.execute_tool_call({"name": name, "arguments": args if isinstance(args, str) else json.dumps(args)})
                     if result:
                         jarvis_speaking.set()
                         try:
                             await asyncio.to_thread(tts.speak, result, interrupt_event)
                         finally:
                             jarvis_speaking.clear()
-            # Si Gemma responde directo (sin herramienta)
+            # Sin herramienta — respuesta directa
             elif message.content:
                 jarvis_speaking.set()
                 try:
@@ -169,6 +202,13 @@ def make_transcription_callback(loop: asyncio.AbstractEventLoop):
                 finally:
                     jarvis_speaking.clear()
 
+        except asyncio.TimeoutError:
+            logging.error("[PC] Timeout — el modelo no respondió en 20s")
+            await asyncio.to_thread(
+                tts.speak,
+                "Señor, el modelo tardó demasiado. Intente de nuevo.",
+                interrupt_event,
+            )
         except Exception as e:
             logging.error(f"Error en modo PC: {e}")
             await asyncio.to_thread(

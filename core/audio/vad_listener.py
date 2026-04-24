@@ -19,6 +19,29 @@ def _normalize(text: str) -> str:
     # Descomponer caracteres Unicode y quedarse solo con ASCII (elimina acentos)
     return unicodedata.normalize("NFD", text).encode("ascii", "ignore").decode("ascii")
 
+# Frases que Whisper alucina con frecuencia en silencio o ruido ambiente.
+# Ya normalizadas (sin acentos, sin puntuación, minúsculas) para comparar contra _normalize().
+_WHISPER_HALLUCINATIONS: frozenset[str] = frozenset({
+    # CTAs de YouTube en español
+    "suscribete", "subscribete", "dale like", "dale me gusta",
+    "activa la campanita", "activa las notificaciones",
+    "comparte este video", "comparte el video",
+    "hasta el proximo video", "hasta la proxima",
+    "hasta el siguiente video", "nos vemos en el proximo video",
+    "nos vemos pronto", "nos vemos en la proxima",
+    "hasta pronto", "hasta luego", "hasta la proxima vez",
+    "y entonces hasta el proximo video",
+    "gracias por ver", "gracias por mirar", "gracias",
+    "muchas gracias por ver", "muchas gracias",
+    # Whisper hallucinations en inglés (aparecen aunque el audio sea en español)
+    "thanks for watching", "thank you for watching",
+    "subtitles by", "subtitulos por", "transcrito por",
+    "watching", "subscribe", "like and subscribe",
+    "see you next time", "bye bye",
+    # Ruido / silencio
+    "", " ",
+})
+
 active_listening_requested = threading.Event()
 jarvis_speaking = threading.Event()
 
@@ -223,7 +246,7 @@ def start_vad_thread(
                             # Filtro de alucinaciones comunes de Whisper en silencio/ruido.
                             # _normalize() elimina acentos para que "¡Suscríbete!" == "suscribete".
                             t_clean = _normalize(text)
-                            if t_clean in ["suscribete", "subscribete", "gracias por ver", "gracias", "watching", "subtitulos por", "transcrito por"]:
+                            if t_clean in _WHISPER_HALLUCINATIONS:
                                 logging.info(f"Hallucination filtrada: {text}")
                                 return
 

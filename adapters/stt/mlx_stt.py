@@ -4,7 +4,7 @@ import mlx_whisper
 class LocalSTT:
     # Cambiamos a 'mlx-community/whisper-small-mlx' o 'mlx-community/whisper-large-v3-turbo'
     # El 'small' es el punto dulce entre velocidad absoluta y precisión perfecta en español.
-    def __init__(self, model_name="mlx-community/whisper-small-mlx"):
+    def __init__(self, model_name="mlx-community/whisper-large-v3-turbo"):
         """
         Adaptador STT que utiliza el framework MLX de Apple para correr Whisper localmente en GPU.
         """
@@ -15,29 +15,25 @@ class LocalSTT:
         Toma una ruta de archivo de audio (.wav) y devuelve la transcripción en texto.
         """
         try:
-            # transcribe devuelve un diccionario con la clave 'text'
-            # El 'initial_prompt' le da al modelo un vocabulario "falso" previo.
-            # Al leer este prompt, el modelo predispone su red neuronal para esperar
-            # jerga de ingeniería de software, código, y comandos de Git/CLI.
-            tech_prompt = (
-                "Comandos de programación en terminal. "
-                "Palabras clave: PR, Pull Request, issue, bug, branch, commit, "
-                "merge, rebase, push, pull, fetch, clone, repo, proyecto, "
-                "Python, JavaScript, React, Node, API, backend, frontend, "
-                "script, archivo, carpeta, directorio, código, refactor, "
-                "ticket, sprint, Jira, GitHub, GitLab, Gemini, CLI, Jarvis. "
-                "¿Cuántos PRs abiertos tiene el proyecto? "
-                "Creame un nuevo issue para este bug."
-            )
+            # Palabras sueltas para sesgar el vocabulario hacia jerga técnica.
+            # IMPORTANTE: sin oraciones completas — Whisper las alucina cuando hay silencio.
+            tech_vocab = "Jarvis, Safari, Chrome, terminal, Python, Git, PR, branch, commit, archivo, carpeta, código, API"
 
             result = mlx_whisper.transcribe(
                 audio_file_path,
                 path_or_hf_repo=self.model_name,
                 language="es",
-                # Opciones para reducir alucinaciones
                 temperature=(0.0, 0.2, 0.4),
-                initial_prompt=tech_prompt,
+                initial_prompt=tech_vocab,
             )
+
+            # Si todos los segments tienen no_speech_prob alto → era silencio/ruido, no voz real.
+            segments = result.get("segments", [])
+            if segments:
+                avg_no_speech = sum(s.get("no_speech_prob", 0) for s in segments) / len(segments)
+                if avg_no_speech > 0.6:
+                    return ""
+
             text = result.get("text", "")
             if isinstance(text, list):
                 text = "".join(text)
