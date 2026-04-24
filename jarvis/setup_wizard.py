@@ -268,10 +268,13 @@ def _install_python_deps(log_fn) -> bool:
 
 # ── GUI ───────────────────────────────────────────────────────────────────────
 
-def run_setup_wizard(on_complete=None) -> None:
+def run_setup_wizard(on_complete=None, parent=None) -> None:
     """
     Muestra la ventana de setup. Bloquea hasta que el usuario completa o cierra.
     on_complete se llama sin argumentos cuando el setup termina exitosamente.
+
+    parent: si se pasa un Tk() existente, usa Toplevel para no crear un segundo intérprete.
+            En ese caso NO llama a mainloop() — el caller ya lo maneja.
     """
     try:
         import tkinter as tk
@@ -283,7 +286,10 @@ def run_setup_wizard(on_complete=None) -> None:
             on_complete()
         return
 
-    root = tk.Tk()
+    if parent is not None:
+        root = tk.Toplevel(parent)
+    else:
+        root = tk.Tk()
     root.title("J.A.R.V.I.S — Configuración inicial")
     root.resizable(False, False)
     root.configure(bg="#0a0a1a")
@@ -530,8 +536,14 @@ def run_setup_wizard(on_complete=None) -> None:
     install_btn.configure(command=_start_install)
     skip_lbl.bind("<Button-1>", lambda _: _skip())
 
+    # Traer al frente (importante en macOS con LSUIElement)
+    root.lift()
+    root.focus_force()
+
     root.after(100, _precheck)
-    root.mainloop()
+    # Si hay un parent, el caller ya maneja el mainloop — solo registramos callbacks.
+    if parent is None:
+        root.mainloop()
 
 
 def _run_headless_setup() -> None:

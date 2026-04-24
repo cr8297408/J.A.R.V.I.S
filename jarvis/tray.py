@@ -557,21 +557,6 @@ def run_tray() -> None:
     # On first bundled run, copy .env template to the user config dir
     _ensure_env_exists()
 
-    # ── First-run setup wizard ─────────────────────────────────────────────────
-    from jarvis.setup_wizard import is_first_run, run_setup_wizard
-    if is_first_run():
-        # run_setup_wizard blocks until the user completes or skips.
-        # We pass a callback so the tray starts after the wizard closes.
-        _tray_started = threading.Event()
-
-        def _after_setup():
-            _tray_started.set()
-
-        run_setup_wizard(on_complete=_after_setup)
-        # If the user closed the wizard without completing, wait anyway — the
-        # setup_wizard already marks done on skip so we won't loop.
-        _tray_started.wait(timeout=0)  # non-blocking: just proceed
-
     # Load .env from the correct location (user config dir when bundled, project root in dev)
     try:
         from dotenv import load_dotenv
@@ -591,7 +576,8 @@ def run_tray() -> None:
     ctrl._icon = icon
 
     # ── Panel de control ───────────────────────────────────────────────────────
-    # El trigger de push-to-talk setea active_listening_requested del vad_listener.
+    # Se crea ANTES del setup wizard para tener un único tk.Tk() en el proceso.
+    # En macOS, crear dos tk.Tk() en el mismo proceso produce un crash silencioso.
     def _push_to_talk():
         try:
             from core.audio.vad_listener import active_listening_requested
@@ -605,8 +591,17 @@ def run_tray() -> None:
 
     # pystray corre en background — tkinter toma el hilo principal
     icon.run_detached()
-    panel.show()       # Mostrar panel al arrancar
-    panel.mainloop()   # Bloquea hasta que el usuario cierre la ventana principal
+
+    # Si es la primera ejecución, mostrar el wizard como Toplevel sobre el panel.
+    # on_complete=panel.show lo muestra cuando el wizard termina.
+    # Si no es primera vez, mostrar el panel directamente.
+    from jarvis.setup_wizard import is_first_run, run_setup_wizard
+    if is_first_run():
+        run_setup_wizard(parent=panel.root, on_complete=panel.show)
+    else:
+        panel.show()
+
+    panel.mainloop()   # Único mainloop — maneja tanto el wizard como el panel
     icon.stop()
 
 
