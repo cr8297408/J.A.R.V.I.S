@@ -126,7 +126,7 @@ async def mock_gemini_stream():
     """Simula la API de Gemini tirando tokens con latencia de red."""
     mock_response = [
         "Hola ",
-        "guacho. ",
+        "de nuevo. ",
         "Acá ",
         "tenés ",
         "el ",
@@ -154,7 +154,7 @@ async def mock_gemini_stream():
     ]
 
     for token in mock_response:
-        # Simulamos la latencia asquerosa de internet (entre 50ms y 200ms por token)
+        # Simulamos la latencia de red (entre 50ms y 200ms por token)
         await asyncio.sleep(0.1)
         yield token
 

@@ -9,17 +9,17 @@ No podemos modificar el código de `gemini-cli` ni de `opencode`. Tenemos que en
 El orquestador en Python (`J.A.R.V.I.S.`) debe lanzar el proceso de la CLI objetivo usando el módulo `subprocess` o `pty` (pseudo-terminal) de Python.
 
 - **`stdin` (Entrada):** J.A.R.V.I.S. escucha al usuario (micrófono -> STT -> Texto) y *escribe* ese texto en el `stdin` del proceso de la CLI, simulando que el usuario lo tecleó y presionó Enter.
-- **`stdout` / `stderr` (Salida):** J.A.R.V.I.S. *lee* en tiempo real lo que la CLI escupe. En lugar de imprimirlo directamente en la pantalla, lo intercepta, lo pasa por el Módulo de Resumen (LLM intermediario), y luego lo reproduce por voz (TTS) y lo imprime formateado en la terminal.
+- **`stdout` / `stderr` (Salida):** J.A.R.V.I.S. *lee* en tiempo real la salida que genera la CLI. En lugar de imprimirlo directamente en la pantalla, lo intercepta, lo pasa por el Módulo de Resumen (LLM intermediario), y luego lo reproduce por voz (TTS) y lo imprime formateado en la terminal.
 
 ### 2. Pseudo-Terminales (PTY) vs Subprocess
-Usar `subprocess.Popen(..., stdout=PIPE, stdin=PIPE)` es lo más fácil, pero muchas CLIs modernas (como las que tienen spinners, colores ANSI o menús interactivos) detectan que no están corriendo en una terminal real (TTY) y cambian su comportamiento o crashean.
+Usar `subprocess.Popen(..., stdout=PIPE, stdin=PIPE)` es lo más fácil, pero muchas CLIs modernas (como las que tienen spinners, colores ANSI o menús interactivos) detectan que no están corriendo en una terminal real (TTY) y cambian su comportamiento o fallan.
 
 **Decisión Arquitectónica Clave:**
-Para soportar herramientas avanzadas como OpenCode en el futuro, es obligatorio usar **`pty` (pseudo-terminals)** en sistemas Unix (Linux/macOS) o librerías multiplataforma como `pexpect`. Esto engaña a la CLI subyacente haciéndole creer que está interactuando con una terminal real.
+Para soportar herramientas avanzadas como OpenCode en el futuro, es obligatorio usar **`pty` (pseudo-terminals)** en sistemas Unix (Linux/macOS) o librerías multiplataforma como `pexpect`. Esto proporciona a la CLI subyacente un entorno equivalente al de una terminal real.
 
 ### 3. Parseo de Trama (Chunking)
 Gemini CLI no devuelve toda la respuesta de golpe; la va "stremeando" (token a token o línea a línea).
-J.A.R.V.I.S. tiene que acumular un "chunk" lógico (ej: hasta que detecta un punto final, un salto de línea doble, o el fin de un bloque de código) antes de enviarlo al resumidor y al TTS. Si mandás a leer palabra por palabra, la latencia te arruina.
+J.A.R.V.I.S. tiene que acumular un "chunk" lógico (ej: hasta que detecta un punto final, un salto de línea doble, o el fin de un bloque de código) antes de enviarlo al resumidor y al TTS. Enviar el texto al TTS palabra por palabra aumenta la latencia.
 
 ### 4. Capa de Adaptadores CLI (Strategy Pattern)
 Así como hicimos con el Audio, la CLI objetivo debe ser intercambiable.
@@ -39,7 +39,7 @@ Así como hicimos con el Audio, la CLI objetivo debe ser intercambiable.
 1. **Usuario:** (Micrófono) "Creá un archivo index.js con un console.log"
 2. **J.A.R.V.I.S. (STT):** Transcribe el audio.
 3. **J.A.R.V.I.S. (Orchestrator):** Inyecta el texto -> `GeminiCLIAdapter.send_input()`
-4. **Proceso Oculto (gemini-cli):** Procesa y escupe por `stdout`: "Claro, aquí tienes el código:\n```javascript\nconsole.log('Hola');\n```"
+4. **Proceso Oculto (gemini-cli):** Procesa y emite por `stdout`: "Claro, aquí tienes el código:\n```javascript\nconsole.log('Hola');\n```"
 5. **J.A.R.V.I.S. (Interceptor):** Captura el bloque. Llama al LLM de resumen.
 6. **J.A.R.V.I.S. (Summarizer):** Devuelve: "Listo, armé el archivo index.js. ¿Querés que lo guarde?"
 7. **J.A.R.V.I.S. (TTS):** Habla el resumen mientras monitorea el VAD por si lo interrumpen.

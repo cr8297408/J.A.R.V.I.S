@@ -1,16 +1,15 @@
 # Especificación Técnica y Arquitectura
 **Nombre del Proyecto:** Gemini Voice CLI Extension (Codename: J.A.R.V.I.S.)
-**Arquitecto:** El guacho que te caga a pedos pero te hace programar bien.
 **Lenguaje Principal (Mandated by Architect):** Python 3.10+ (Por madurez en ecosistema de audio, VAD e IA local).
 
 ## 1. Diseño Arquitectónico (Arquitectura Hexagonal)
-No vamos a acoplar la lógica de negocio con las librerías de mierda que cambian cada dos meses. Todo el core se comunica con el mundo exterior mediante **Puertos** (Interfaces) y **Adaptadores** (Patrón Strategy).
+La lógica de negocio debe permanecer desacoplada de las librerías externas, que pueden cambiar con frecuencia. Todo el core se comunica con el mundo exterior mediante **Puertos** (Interfaces) y **Adaptadores** (Patrón Strategy).
 
 ### 1.1. Core System (El Cerebro)
 - **Máquina de Estados Finita (FSM):** Maneja el flujo del asistente.
   - `IDLE`: Esperando que hables.
   - `LISTENING`: Grabando audio del micrófono.
-  - `THINKING`: Transcribiendo (STT) y pegándole a Gemini.
+  - `THINKING`: Transcribiendo (STT) y consultando a Gemini.
   - `SUMMARIZING`: Pasando el output crudo de Gemini por un LLM rápido para hacerlo conversacional.
   - `SPEAKING`: Reproduciendo el resumen (TTS).
   - `WAITING_APPROVAL`: Estado bloqueante si Gemini generó una acción destructiva (ej: guardar archivo, correr comando).
@@ -21,20 +20,20 @@ No vamos a acoplar la lógica de negocio con las librerías de mierda que cambia
 - **Puerto:** `ISpeechRecognizer.transcribe(audio_stream: bytes) -> str`
 - **Adaptadores:**
   - `LocalWhisperAdapter`: Usa `faster-whisper` (CTranslate2) corriendo en CPU o GPU local.
-  - `OpenAIWhisperAdapter`: Le pega a la API de OpenAI.
+  - `OpenAIWhisperAdapter`: Se comunica con la API de OpenAI.
 
 #### B. TTS (Text-to-Speech) Engine
 - **Puerto:** `ITextToSpeech.synthesize(text: str) -> bytes`
 - **Adaptadores:**
   - `LocalPiperAdapter`: Usa Piper TTS (ONNX) para síntesis local ultrarrápida.
-  - `ElevenLabsAdapter`: Le pega a la API de ElevenLabs vía WebSocket para baja latencia.
+  - `ElevenLabsAdapter`: Se comunica con la API de ElevenLabs vía WebSocket para baja latencia.
 
 #### C. Lógica de Intermediación (Gemini Proxy)
 - **Función:** Captura la respuesta final de Gemini CLI antes de imprimirla en pantalla.
 - **Flujo:** `Raw_Gemini_Output -> LLM_Summarizer_Prompt -> Conversational_Output -> TTS`
 
 ## 2. El Problema del Barge-in (Interrupción)
-Este es el quilombo más grande de ingeniería del proyecto. No podés tener un hilo bloqueado reproduciendo audio y esperar que escuche al mismo tiempo.
+Este es el principal desafío de ingeniería del proyecto. Un hilo bloqueado reproduciendo audio no puede escuchar al mismo tiempo.
 
 ### 2.1. Arquitectura de Hilos (Threading)
 - **Main Thread:** Maneja la FSM y la UI de la terminal (logs, spinners).

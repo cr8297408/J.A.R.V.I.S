@@ -3,7 +3,7 @@ import threading
 import sys
 import os
 
-# Agregamos el root del proyecto al PYTHONPATH para poder importar las carpetas sin quilombos
+# Agregamos el root del proyecto al PYTHONPATH para permitir la importación de los módulos
 sys.path.append(
     os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 )

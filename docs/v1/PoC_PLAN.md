@@ -1,21 +1,21 @@
 # Plan de Prueba de Concepto (PoC) v1.0
-**Estado:** Arquitecturado a los golpes.
+**Estado:** Diseño arquitectónico inicial.
 **Objetivo del PoC:** Validar el motor de audio híbrido (STT/TTS), la interrupción (barge-in) con VAD y la integración básica con Gemini CLI como "cerebro".
 
-## Fases de Desarrollo (El Camino del Guerrero)
+## Fases de Desarrollo
 
-### Fase 1: Desriesgar el Hardware y el VAD (El Verdadero Quilombo) ✅
-**¡OJO ACÁ!** No podés probar si tu hilo de audio se bloquea si al mismo tiempo estás esperando 3 segundos a que Gemini te devuelva un token por internet. La latencia de red te va a enmascarar los problemas de concurrencia local.
+### Fase 1: Reducir los riesgos del Hardware y el VAD ✅
+**Consideración importante:** No podés probar si tu hilo de audio se bloquea si al mismo tiempo estás esperando 3 segundos a que Gemini te devuelva un token por internet. La latencia de red te va a enmascarar los problemas de concurrencia local.
 
 1. **Setup de PyAudio / SoundDevice:** Grabar 5 segundos de audio y guardarlos en un `.wav`. Validar permisos del SO.
 2. **Setup del VAD (Voice Activity Detection):** Implementar Silero VAD. Lograr que la consola imprima `[HABLANDO]` y `[SILENCIO]` en tiempo real mientras monitorea el mic en un hilo separado (Daemon Thread).
 3. **El Dummy Player:** Un hilo reproduciendo un audio largo (ej: un discurso de 1 minuto) mientras el hilo del VAD escucha.
-4. **La Prueba de Fuego (Barge-in):** Si el VAD detecta `[HABLANDO]`, le manda un `Event.set()` (Threading Event) al Dummy Player para que vacíe su buffer de audio y se calle la boca instantáneamente.
+4. **La Prueba de Fuego (Barge-in):** Si el VAD detecta `[HABLANDO]`, le manda un `Event.set()` (Threading Event) al Dummy Player para que vacíe su buffer de audio y detenga la reproducción instantáneamente.
 
-*Criterio de Aceptación F1:* Si yo hablo, la compu se calla en menos de 200ms. Sin lag.
+*Criterio de Aceptación F1:* Si el usuario habla, el equipo detiene la reproducción en menos de 200ms.
 
 ### Fase 2: El Cerebro (Integración con Gemini API)
-Recién acá, cuando la casa tiene cimientos y no se cae a pedazos, metemos a la IA.
+La integración con la IA comienza una vez validada la base del motor de audio.
 
 1. **El Prompt de Resumen (Summarizer):**
    - Entrada: Texto crudo ("Acá te va el script en bash: `rm -rf /`...").
@@ -30,6 +30,6 @@ Recién acá, cuando la casa tiene cimientos y no se cae a pedazos, metemos a la
 2. Interceptar el `stdout` de la CLI antes de que pinte la pantalla, mandarlo a nuestro orquestador, y que el orquestador decida si lo lee en voz alta o espera confirmación.
 
 ## Riesgos Identificados
-- **Race conditions:** Variables compartidas entre el hilo del VAD y el hilo del Reproductor de Audio (usar `queue.Queue` y `threading.Event`, NUNCA locks crudos si no sabés lo que hacés).
+- **Race conditions:** Variables compartidas entre el hilo del VAD y el hilo del Reproductor de Audio (usar `queue.Queue` y `threading.Event`, evitar el uso directo de locks sin un diseño de sincronización validado).
 - **Buffer Underrun:** Que el TTS no alcance a generar el audio suficientemente rápido y la voz suene entrecortada.
-- **Costos/Latencia STT/TTS:** OpenAI y ElevenLabs son rápidos, pero Whisper y Piper locales te van a comer la CPU si no usás una buena aceleración por hardware (CUDA/MPS en Mac).
+- **Costos/Latencia STT/TTS:** OpenAI y ElevenLabs son rápidos, pero Whisper y Piper locales pueden consumir una cantidad elevada de CPU si no usás una buena aceleración por hardware (CUDA/MPS en Mac).

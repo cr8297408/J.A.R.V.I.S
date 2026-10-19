@@ -5,15 +5,15 @@ import google.generativeai as genai
 class GeminiSummarizer:
     """
     Adaptador para la API de Gemini.
-    Su única responsabilidad es agarrar choclos de código y traducirlos
-    a un lenguaje humano, corto y al pie.
+    Su única responsabilidad es resumir bloques de código y traducirlos
+    a un lenguaje natural y conciso.
     """
 
     def __init__(self):
         api_key = os.getenv("GEMINI_API_KEY")
         if not api_key:
             raise ValueError(
-                "¡Pará, boludo! Te falta la variable de entorno GEMINI_API_KEY."
+                "Falta la variable de entorno GEMINI_API_KEY."
             )
 
         genai.configure(api_key=api_key)
